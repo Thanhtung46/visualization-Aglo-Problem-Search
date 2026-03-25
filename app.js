@@ -22,7 +22,8 @@ const state = {
     lastRenderedBoard: null,
 };
 const MAX_HISTORY_STEPS = 180;
-const FLASH_ANIM_MS = 520;
+// Rút ngắn thời lượng flash để animation compare chạy nhanh hơn.
+const FLASH_ANIM_MS = 180;
 
 function getById(id) {
     return document.getElementById(id);
@@ -314,11 +315,11 @@ function renderCompareResult(result) {
             : (pathFound && typeof pathLength === "number" ? Math.max(pathLength - 1, 0) : "-");
 
         const lines = [
-            `Supported: ${data.supported ? "Yes" : "No"}`,
+            // `Supported: ${data.supported ? "Yes" : "No"}`,
             `Finished: ${data.finished ? "Yes" : "No"}`,
             `Success: ${data.success ? "Yes" : "No"}`,
-            `Stopped by timeout: ${data.stopped_by_timeout ? "Yes" : "No"}`,
-            `Stopped by max steps: ${data.stopped_by_limit ? "Yes" : "No"}`,
+            // `Stopped by timeout: ${data.stopped_by_timeout ? "Yes" : "No"}`,
+            // `Stopped by max steps: ${data.stopped_by_limit ? "Yes" : "No"}`,
             `Time budget (ms): ${data.max_duration_ms ?? "-"}`,
             `Max steps: ${data.max_steps ?? "-"}`,
             `Path found: ${pathFound ? "Yes" : "No"}`,
@@ -327,8 +328,8 @@ function renderCompareResult(result) {
             `Nodes explored: ${data.nodes_explored ?? "-"}`,
             `Steps: ${data.steps_executed ?? "-"}`,
             `Peak frontier: ${data.frontier_peak ?? "-"}`,
-            `Frontier remaining: ${data.frontier_remaining ?? "-"}`,
-            `Processing time (ms): ${data.processing_time_ms ?? data.elapsed_ms ?? "-"}`,
+            // `Frontier remaining: ${data.frontier_remaining ?? "-"}`,
+            // `Processing time (ms): ${data.processing_time_ms ?? data.elapsed_ms ?? "-"}`,
             data.error ? `Error: ${data.error}` : "",
         ].filter(Boolean);
 
@@ -386,16 +387,13 @@ function renderCompareResult(result) {
 }
 
 function getCompareAnimIntervalMs(frameCount) {
-    const el = getById("compare-anim-budget-sec");
-    let sec = 50;
-    if (el) {
-        const v = Number(el.value);
-        if (Number.isFinite(v) && v >= 1 && v <= 600) sec = v;
-    }
+    // Tua nhanh compare theo ngân sách thời gian cố định.
+    // (Các ô animation nhiều thì interval càng nhỏ để tổng thời gian xấp xỉ không đổi.)
+    const sec = 15;
     const budgetMs = sec * 1000;
     const ticks = Math.max(frameCount - 1, 1);
     const raw = Math.floor(budgetMs / ticks);
-    return Math.max(5, Math.min(600, raw));
+    return Math.max(1, Math.min(300, raw));
 }
 
 function renderMiniBoard(targetId, boardState, prevBoardState = null) {
@@ -584,8 +582,8 @@ async function resetSearch() {
 
 async function compareAlgorithms() {
     if (state.isRunning) return alert("Hay dung thuat toan hien tai truoc khi compare.");
-    const algoA = getById("compare-a")?.value || "bfs";
-    const algoB = getById("compare-b")?.value || "dfs";
+    const algoA = getById("compare-a")?.value || "";
+    const algoB = getById("compare-b")?.value || "";
     const summary = getById("compare-summary");
     const metrics = getById("compare-metrics");
     const traversal = getById("compare-traversal");
@@ -601,8 +599,8 @@ async function compareAlgorithms() {
                 algo_a: algoA,
                 algo_b: algoB,
                 max_steps: 400000,
-                max_duration_ms: 0,
-                sample_limit: 500,
+                max_duration_ms: 200,
+                // sample_limit: 500,
             }),
         });
         const data = await res.json();

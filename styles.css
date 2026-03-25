@@ -222,7 +222,7 @@ button {
 
 .tile.tile-changed-flash,
 .tile.empty.tile-changed-flash {
-    animation: tile-changed-flash 0.5s ease-out;
+    animation: tile-changed-flash 0.18s ease-out;
     z-index: 1;
 }
 
@@ -234,7 +234,7 @@ button {
 
 .mini-tile.mini-tile-changed-flash,
 .mini-tile.empty.mini-tile-changed-flash {
-    animation: mini-tile-changed-flash 0.5s ease-out;
+    animation: mini-tile-changed-flash 0.18s ease-out;
 }
 
 @keyframes compare-main-tile-changed-flash {
@@ -245,7 +245,7 @@ button {
 
 .compare-main-tile.compare-main-tile-changed-flash,
 .compare-main-tile.empty.compare-main-tile-changed-flash {
-    animation: compare-main-tile-changed-flash 0.5s ease-out;
+    animation: compare-main-tile-changed-flash 0.18s ease-out;
     z-index: 1;
 }
 
