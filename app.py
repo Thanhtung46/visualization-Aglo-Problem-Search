@@ -284,6 +284,42 @@ def plan_algorithm():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/solve', methods=['GET'])
+def solve():
+    try:
+        algo_key = request.args.get("algo", DEFAULT_ALGO)
+        max_steps = int(request.args.get("max_steps", 200000))
+
+        engine = get_engine(algo_key)  # ← dùng engine đang có, không tạo mới
+        if engine is None:
+            return jsonify({"error": f"Unsupported algorithm: {algo_key}"}), 400
+
+        engine.reset()  # reset về initial_state hiện tại (đã random rồi)
+        started = time.perf_counter()
+        nodes_explored = 0
+        final_path = []
+        success = False
+
+        for _ in range(max_steps):
+            payload = engine.step()
+            nodes_explored = int(payload.get("nodes_explored", nodes_explored))
+            if payload.get("finished"):
+                success = bool(payload.get("success"))
+                final_path = payload.get("final_path", [])
+                break
+
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        return jsonify({
+            "ok": True,
+            "success": success,
+            "nodes_explored": nodes_explored,
+            "elapsed_ms": elapsed_ms,
+            "path_length": len(final_path),
+            "final_path": final_path,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
     # Chạy Flask ở cổng 5000
     app.run(host='127.0.0.1', port=5000, debug=True)

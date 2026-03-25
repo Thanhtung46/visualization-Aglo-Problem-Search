@@ -61,30 +61,52 @@ function scheduleMainTileFlashClear(container) {
     window.setTimeout(() => clearMainTileFlashClasses(container), FLASH_ANIM_MS);
 }
 
-function render(boardState, animateFromPrevious = false) {
-    const container = getById("puzzle-container");
-    container.innerHTML = "";
-    if (!boardState) {
-        state.lastRenderedBoard = null;
-        return;
-    }
+let _prevBoard = null; // thêm dòng này ở top-level, cạnh const state = {...}
 
-    const prev = animateFromPrevious ? state.lastRenderedBoard : null;
-    const changed = prev ? getChangedCellIndices(prev, boardState) : [];
+function render(boardState, movedNum = null) {
+  const container = getById("puzzle-container");
+  if (!boardState) return;
 
-    boardState.forEach((num, idx) => {
-        const div = document.createElement("div");
-        const flash = changed.length > 0 && changed.includes(idx) ? " tile-changed-flash" : "";
-        div.className = "tile" + (num === 0 ? " empty" : "") + flash;
-        div.innerText = num !== 0 ? num : "";
-        container.appendChild(div);
+  // Bước FIRST: đo vị trí cũ
+  const oldPositions = {};
+  if (_prevBoard) {
+    _prevBoard.forEach((num, i) => {
+      const el = container.children[i];
+      if (el) oldPositions[num] = el.getBoundingClientRect();
     });
+  }
 
-    state.lastRenderedBoard = [...boardState];
+  // Xóa và vẽ lại (LAST)
+  container.innerHTML = "";
+  boardState.forEach(num => {
+    const div = document.createElement("div");
+    div.className = "tile" + (num === 0 ? " empty" : "");
+    div.innerText = num !== 0 ? num : "";
+    container.appendChild(div);
+  });
 
-    if (changed.length > 0) {
-        scheduleMainTileFlashClear(container);
-    }
+  // Bước INVERT + PLAY
+  boardState.forEach((num, i) => {
+    const el = container.children[i];
+    if (!oldPositions[num]) return;
+    const newPos = el.getBoundingClientRect();
+    const dx = oldPositions[num].left - newPos.left;
+    const dy = oldPositions[num].top - newPos.top;
+    if (dx === 0 && dy === 0) return;
+
+    el.style.transform = `translate(${dx}px, ${dy}px)`;
+    el.offsetHeight; // force reflow
+    el.classList.add("animating");
+    if (num === movedNum) el.classList.add("moved");
+    el.style.transform = "";
+
+    el.addEventListener("transitionend", () => {
+      el.classList.remove("animating");
+      setTimeout(() => el.classList.remove("moved"), 180);
+    }, { once: true });
+  });
+
+  _prevBoard = [...boardState];
 }
 
 function fillMiniGrid(grid, nodeState, prevState) {
@@ -671,7 +693,12 @@ async function fetchOneStep() {
             return { done: true };
         }
 
-        if (data.current_state) render(data.current_state, true);
+        if (data.current_state) {
+            const prev = _prevBoard;
+            const next = data.current_state;
+            const movedNum = prev ? next[prev.indexOf(0)] : null;
+            render(next, movedNum);
+        }
         if (data.current_state) pushHistoryStep(data.current_state);
         if (typeof data.nodes_explored !== "undefined") {
             getById("nodes").innerText = data.nodes_explored;
@@ -828,6 +855,52 @@ function setupAlgorithmMenu() {
             loadSourceCode();
         });
     });
+}
+
+async function solveInstant() {
+    if (state.isRunning) return alert("Hãy dừng thuật toán trước.");
+
+    setStatus(`Đang giải ${state.currentAlgorithm.toUpperCase()}...`);
+    try {
+        const res = await fetch(buildApiUrl("/solve"));
+        const data = await res.json();
+        if (!res.ok) return handleUnsupportedAlgo();
+
+        if (!data.success || !data.final_path?.length) {
+            setStatus("Không tìm thấy lời giải.");
+            return;
+        }
+
+        getById("nodes").innerText = data.nodes_explored;
+        getById("time").innerText = data.elapsed_ms + "ms";
+
+        // Replay từng bước có delay
+        state.isRunning = true;
+        state.traversalHistory = [];
+
+        for (let i = 0; i < data.final_path.length; i++) {
+            if (!state.isRunning) break; // cho phép Reset dừng giữa chừng
+
+            const stepState = data.final_path[i];
+            const prev = i > 0 ? data.final_path[i - 1] : null;
+            const movedNum = prev ? stepState[prev.indexOf(0)] : null;
+
+            pushHistoryStep(stepState);
+            render(stepState, movedNum);
+            setStatus(`Bước ${i + 1} / ${data.final_path.length}`);
+
+            if (i < data.final_path.length - 1) {
+                await new Promise(r => setTimeout(r, getDelayMs()));
+            }
+        }
+
+        state.isRunning = false;
+        setStatus(`Hoàn thành — ${data.path_length} bước, ${data.nodes_explored} nút đã duyệt`);
+
+    } catch (err) {
+        state.isRunning = false;
+        setStatus("Lỗi kết nối backend.");
+    }
 }
 
 window.startSearch = startSearch;
