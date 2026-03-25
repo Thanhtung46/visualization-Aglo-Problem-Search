@@ -45,8 +45,11 @@ def simulate_algorithm(
     initial_state=None,
     max_duration_ms=None,
 ):
+    
     isolated_engines = build_default_engines()
     engine = isolated_engines.get((algo_key or "").lower())
+    
+
     if engine is None:
         return {
             "algo": algo_key,
@@ -199,7 +202,7 @@ def compare_algorithms():
         algo_a = (body.get("algo_a") or "bfs").lower()
         algo_b = (body.get("algo_b") or "dfs").lower()
         max_steps = int(body.get("max_steps", 400000))
-        sample_limit = int(body.get("sample_limit", 500))
+        # sample_limit = int(body.get("sample_limit", 500))
         _md = body.get("max_duration_ms", None)
         if _md in (None, "", False):
             max_duration_ms = None
@@ -211,13 +214,13 @@ def compare_algorithms():
         result_a = simulate_algorithm(
             algo_a,
             max_steps=max_steps,
-            sample_limit=sample_limit,
+            # sample_limit=sample_limit,
             max_duration_ms=max_duration_ms,
         )
         result_b = simulate_algorithm(
             algo_b,
             max_steps=max_steps,
-            sample_limit=sample_limit,
+            # sample_limit=sample_limit,
             max_duration_ms=max_duration_ms,
         )
 
@@ -241,7 +244,7 @@ def compare_algorithms():
             "algo_b": result_b,
             "winner": winner,
             "max_steps": max_steps,
-            "sample_limit": sample_limit,
+            # "sample_limit": sample_limit,
             "max_duration_ms": max_duration_ms,
         })
     except Exception as e:
