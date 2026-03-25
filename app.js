@@ -15,6 +15,7 @@ const state = {
     currentSourceLanguage: "python",
     compareMode: false,
     compareAnimationTimer: null,
+    compareIsRunning: false,
     precomputedTotalCost: null,
     precomputedExploreSteps: null,
     planRequestId: 0,
@@ -255,6 +256,79 @@ function setRemainingSteps(value) {
     getById("remaining-steps").innerText = value == null ? "-" : String(value);
 }
 
+function setButtonClass(btn, className, on) {
+    if (!btn) return;
+    if (on) btn.classList.add(className);
+    else btn.classList.remove(className);
+}
+
+function setButtonDisabled(btn, disabled) {
+    if (!btn) return;
+    btn.disabled = disabled;
+    if (disabled) btn.classList.add("btn-dim");
+    else btn.classList.remove("btn-dim");
+}
+
+function syncTopbarButtons() {
+    const solveBtn = getById("solve-btn");
+    const autoRunBtn = getById("auto-run-btn");
+    const nextStepBtn = getById("next-step-btn");
+    const pauseBtn = getById("pause-btn");
+    const resetBtn = getById("reset-btn");
+    const randomBtn = getById("random-btn");
+    const compareModeBtn = getById("compare-mode-btn");
+    const compareBtn = getById("compare-btn");
+
+    // Clear state classes
+    [solveBtn, autoRunBtn, nextStepBtn, pauseBtn, resetBtn, randomBtn, compareBtn, compareModeBtn].forEach(btn => {
+        if (!btn) return;
+        btn.classList.remove("btn-running", "btn-paused", "btn-busy");
+    });
+
+    if (state.compareIsRunning) {
+        setButtonDisabled(solveBtn, true);
+        setButtonDisabled(autoRunBtn, true);
+        setButtonDisabled(nextStepBtn, true);
+        setButtonDisabled(pauseBtn, true);
+        setButtonDisabled(resetBtn, true);
+        setButtonDisabled(randomBtn, true);
+        if (compareBtn) {
+            setButtonDisabled(compareBtn, true);
+            compareBtn.classList.add("btn-busy");
+        }
+        return;
+    }
+
+    // Compare Mode: tắt các nút vận hành thuật toán thường
+    if (state.compareMode) {
+        setButtonDisabled(solveBtn, true);
+        setButtonDisabled(autoRunBtn, true);
+        setButtonDisabled(nextStepBtn, true);
+        setButtonDisabled(pauseBtn, true);
+        setButtonDisabled(resetBtn, false);
+        setButtonDisabled(randomBtn, false);
+        setButtonDisabled(compareBtn, false);
+        setButtonClass(compareModeBtn, "btn-running", true);
+        setButtonClass(compareModeBtn, "btn-paused", false);
+        return;
+    }
+
+    // Running/paused chế độ bình thường
+    const isSearchActive = Boolean(state.autoRun || state.isRunning);
+    setButtonDisabled(solveBtn, isSearchActive);
+    setButtonDisabled(autoRunBtn, Boolean(state.autoRun));
+    setButtonDisabled(nextStepBtn, Boolean(state.autoRun));
+    setButtonDisabled(pauseBtn, !Boolean(state.autoRun));
+    setButtonDisabled(resetBtn, false);
+    setButtonDisabled(randomBtn, isSearchActive);
+    setButtonDisabled(compareBtn, false);
+    setButtonClass(compareModeBtn, "btn-running", false);
+
+    setButtonClass(autoRunBtn, "btn-running", Boolean(state.autoRun));
+    setButtonClass(pauseBtn, "btn-paused", Boolean(state.autoRun && state.isPaused));
+    setButtonClass(pauseBtn, "btn-running", Boolean(state.autoRun && !state.isPaused));
+}
+
 async function precomputeGoalPlan() {
     const requestId = ++state.planRequestId;
     state.precomputedTotalCost = null;
@@ -342,13 +416,15 @@ function renderCompareResult(result) {
             `Success: ${data.success ? "Yes" : "No"}`,
             // `Stopped by timeout: ${data.stopped_by_timeout ? "Yes" : "No"}`,
             // `Stopped by max steps: ${data.stopped_by_limit ? "Yes" : "No"}`,
-            `Time budget (ms): ${data.max_duration_ms ?? "-"}`,
-            `Max steps: ${data.max_steps ?? "-"}`,
+            // `Time budget (ms): ${data.max_duration_ms ?? "-"}`,
+            // `Max steps: ${data.max_steps ?? "-"}`,
+            `Node explore limit: ${data.max_nodes_explored ?? "-"}`,
+            // `Stopped by node limit: ${data.stopped_by_node_limit ? "Yes" : "No"}`,
             `Path found: ${pathFound ? "Yes" : "No"}`,
-            `Path length: ${pathLength ?? "-"}`,
-            `Total path cost: ${totalPathCost ?? "-"}`,
+            // `Path length: ${pathLength ?? "-"}`,
+            // `Total path cost: ${totalPathCost ?? "-"}`,
             `Nodes explored: ${data.nodes_explored ?? "-"}`,
-            `Steps: ${data.steps_executed ?? "-"}`,
+            `Total path cost: ${data.steps_executed ?? "-"}`,
             `Peak frontier: ${data.frontier_peak ?? "-"}`,
             // `Frontier remaining: ${data.frontier_remaining ?? "-"}`,
             // `Processing time (ms): ${data.processing_time_ms ?? data.elapsed_ms ?? "-"}`,
@@ -456,8 +532,8 @@ function renderCompareSplit(result) {
         const algoB = getById("compare-b")?.value || "dfs";
         getById("compare-side-a-title").innerText = `Algo A: ${algoA.toUpperCase()}`;
         getById("compare-side-b-title").innerText = `Algo B: ${algoB.toUpperCase()}`;
-        getById("compare-side-a-stats").innerText = "Chua chay compare";
-        getById("compare-side-b-stats").innerText = "Chua chay compare";
+        // getById("compare-side-a-stats").innerText = "Chua chay compare";
+        // getById("compare-side-b-stats").innerText = "Chua chay compare";
         renderMiniBoard("compare-side-a-board", state.currentInitialState);
         renderMiniBoard("compare-side-b-board", state.currentInitialState);
         resolve();
@@ -560,6 +636,7 @@ async function randomizeInput() {
         if (state.compareMode) {
             renderCompareSplit(null);
         }
+        syncTopbarButtons();
     } catch (err) {
         alert("Không thể kết nối Backend.");
     }
@@ -574,6 +651,7 @@ async function resetSearch() {
         const pauseBtn = getById("pause-btn");
         pauseBtn.disabled = true;
         pauseBtn.innerText = "Pause";
+        syncTopbarButtons();
     }
     state.isFetchingStep = false;
 
@@ -597,6 +675,7 @@ async function resetSearch() {
         if (state.compareMode) {
             renderCompareSplit(null);
         }
+        syncTopbarButtons();
     } catch (err) {
         alert("Không thể kết nối Backend.");
     }
@@ -606,12 +685,19 @@ async function compareAlgorithms() {
     if (state.isRunning) return alert("Hay dung thuat toan hien tai truoc khi compare.");
     const algoA = getById("compare-a")?.value || "";
     const algoB = getById("compare-b")?.value || "";
+    const nodeLimitEl = getById("compare-node-limit");
+    let maxNodesExplored = 5000;
+    const parsed = Number(nodeLimitEl?.value);
+    if (Number.isFinite(parsed) && parsed >= 1) maxNodesExplored = parsed;
     const summary = getById("compare-summary");
     const metrics = getById("compare-metrics");
     const traversal = getById("compare-traversal");
     summary.innerText = "Dang chay mo phong compare...";
     metrics.innerHTML = "";
     traversal.innerHTML = "";
+
+    state.compareIsRunning = true;
+    syncTopbarButtons();
 
     try {
         const res = await fetch(`${API_BASE}/compare`, {
@@ -622,6 +708,7 @@ async function compareAlgorithms() {
                 algo_b: algoB,
                 max_steps: 400000,
                 max_duration_ms: 200,
+                max_nodes_explored: maxNodesExplored,
                 // sample_limit: 500,
             }),
         });
@@ -633,6 +720,9 @@ async function compareAlgorithms() {
     } catch (err) {
         renderCompareResult(null);
         alert("Khong the ket noi backend de compare.");
+    } finally {
+        state.compareIsRunning = false;
+        syncTopbarButtons();
     }
 }
 
@@ -668,6 +758,7 @@ function toggleCompareMode() {
     if (!state.compareMode) {
         render(state.currentInitialState, false);
     }
+    syncTopbarButtons();
 }
 
 function togglePause() {
@@ -677,6 +768,7 @@ function togglePause() {
     const pauseBtn = getById("pause-btn");
     pauseBtn.innerText = state.isPaused ? "Resume" : "Pause";
     setStatus(state.isPaused ? "Đã tạm dừng Auto Run" : "Đang Auto Run");
+    syncTopbarButtons();
 }
 
 async function fetchOneStep() {
@@ -754,6 +846,7 @@ async function startSearch() {
     pauseBtn.disabled = false;
     pauseBtn.innerText = "Pause";
     setStatus(`Đang Auto Run ${state.currentAlgorithm.toUpperCase()}...`);
+    syncTopbarButtons();
 
     let done = false;
     while (state.autoRun && !done) {
@@ -771,6 +864,7 @@ async function startSearch() {
     state.isPaused = false;
     pauseBtn.disabled = true;
     pauseBtn.innerText = "Pause";
+    syncTopbarButtons();
 }
 
 async function loadSourceCode() {
@@ -859,6 +953,13 @@ async function solveInstant() {
     if (state.isRunning) return alert("Hãy dừng thuật toán trước.");
 
     setStatus(`Đang giải ${state.currentAlgorithm.toUpperCase()}...`);
+    state.isRunning = true;
+    state.autoRun = false;
+    state.isPaused = false;
+    const pauseBtn = getById("pause-btn");
+    pauseBtn.disabled = true;
+    pauseBtn.innerText = "Pause";
+    syncTopbarButtons();
     try {
         const res = await fetch(buildApiUrl("/solve"));
         const data = await res.json();
@@ -894,10 +995,12 @@ async function solveInstant() {
 
         state.isRunning = false;
         setStatus(`Hoàn thành — ${data.path_length} bước, ${data.nodes_explored} nút đã duyệt`);
+        syncTopbarButtons();
 
     } catch (err) {
         state.isRunning = false;
         setStatus("Lỗi kết nối backend.");
+        syncTopbarButtons();
     }
 }
 
@@ -915,4 +1018,5 @@ render(state.currentInitialState, false);
 resetHistory(state.currentInitialState);
 setupAlgorithmMenu();
 loadSourceCode();
+syncTopbarButtons();
 resetSearch();
