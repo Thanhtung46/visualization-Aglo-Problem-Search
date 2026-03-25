@@ -24,12 +24,12 @@
 
         <main class="main">
             <div class="topbar">
-                <button class="btn-solve" onclick="solveInstant()">Solve</button>
-                <button class="btn-start" onclick="startSearch()">Auto Run</button>
-                <button class="btn-start" onclick="nextStep()">Next Step</button>
+                <button id="solve-btn" class="btn-solve" onclick="solveInstant()">Solve</button>
+                <button id="auto-run-btn" class="btn-start" onclick="startSearch()">Auto Run</button>
+                <button id="next-step-btn" class="btn-start" onclick="nextStep()">Next Step</button>
                 <button id="pause-btn" class="btn-pause" onclick="togglePause()" disabled>Pause</button>
-                <button class="btn-reset" onclick="resetSearch()">Reset</button>
-                <button class="btn-random" onclick="randomizeInput()">Random Input</button>
+                <button id="reset-btn" class="btn-reset" onclick="resetSearch()">Reset</button>
+                <button id="random-btn" class="btn-random" onclick="randomizeInput()">Random Input</button>
                 <label class="delay">Delay (ms) <input id="delay-input" type="number" min="50" max="5000" step="50" value="600"></label>
                 <button id="compare-mode-btn" class="btn-random" onclick="toggleCompareMode()">Compare Mode: Off</button>
                 <div id="compare-controls" class="hidden">
@@ -58,11 +58,15 @@
                             <option value="idastar">IDA*</option>
                             <option value="advanced">Advanced</option>
                         </select>
-                    <!-- </label> -->
+                    </label>
+                    <label class="delay" title="Giới hạn tối đa số nút được khám phá (nodes_explored) trong compare.">
+                        Node explore limit
+                        <input id="compare-node-limit" type="number" min="1" max="500000" step="500" value="5000">
+                    </label>
                     <!-- <label class="delay" title="Tổng thời gian tối đa để chạy hết animation compare; số frame càng nhiều thì mỗi frame càng nhanh.">Tua compare (giây) -->
                         <!-- <input id="compare-anim-budget-sec" type="number" min="1" max="600" step="1" value="50"> -->
                     <!-- </label> -->
-                    <button class="btn-start" onclick="compareAlgorithms()">Compare</button>
+                    <button id="compare-btn" class="btn-start" onclick="compareAlgorithms()">Compare</button>
                 </div>
             </div>
 
@@ -74,12 +78,12 @@
                             <div class="compare-side">
                                 <div class="compare-title" id="compare-side-a-title">Algo A</div>
                                 <div class="compare-main-board" id="compare-side-a-board"></div>
-                                <div class="compare-line" id="compare-side-a-stats">No data</div>
+                                <!-- <div class="compare-line" id="compare-side-a-stats">No data</div> -->
                             </div>
                             <div class="compare-side">
                                 <div class="compare-title" id="compare-side-b-title">Algo B</div>
                                 <div class="compare-main-board" id="compare-side-b-board"></div>
-                                <div class="compare-line" id="compare-side-b-stats">No data</div>
+                                <!-- <div class="compare-line" id="compare-side-b-stats">No data</div> -->
                             </div>
                         </div>
                     </div>
@@ -101,7 +105,7 @@
                     </div>
                     <div class="panel hidden" id="compare-panel">
                         <h3 class="panel-title">So sánh thuật toán</h3>
-                        <div id="compare-summary" class="subtle">Chọn 2 thuật toán và bấm Compare.</div>
+                        <!-- <div id="compare-summary" class="subtle">Chọn 2 thuật toán và bấm Compare.</div> -->
                         <div class="compare-metrics" id="compare-metrics"></div>
                         <div class="compare-traversal" id="compare-traversal"></div>
                     </div>

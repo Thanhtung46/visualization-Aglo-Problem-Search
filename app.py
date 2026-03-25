@@ -44,6 +44,7 @@ def simulate_algorithm(
     sample_limit=60,
     initial_state=None,
     max_duration_ms=None,
+    max_nodes_explored=None,
 ):
     
     isolated_engines = build_default_engines()
@@ -69,6 +70,7 @@ def simulate_algorithm(
     nodes_explored = 0
     sampled_traversal = []
     last_payload = {}
+    stopped_by_node_limit = False
 
     while steps_executed < max_steps:
         if max_duration_ms is not None:
@@ -80,6 +82,12 @@ def simulate_algorithm(
         steps_executed += 1
         frontier_peak = max(frontier_peak, int(payload.get("frontier_size", 0)))
         nodes_explored = int(payload.get("nodes_explored", nodes_explored))
+
+        if max_nodes_explored is not None and max_nodes_explored > 0:
+            if nodes_explored >= int(max_nodes_explored):
+                stopped_by_node_limit = True
+                break
+
         current_state = payload.get("current_state")
         _reservoir_append_sample(sampled_traversal, current_state, steps_executed, sample_limit)
 
@@ -105,7 +113,12 @@ def simulate_algorithm(
             sampled_traversal.append(fs)
 
     stopped_by_limit = bool((not finished) and steps_executed >= max_steps)
-    stopped_by_timeout = bool((not finished) and (max_duration_ms is not None) and (not stopped_by_limit))
+    stopped_by_timeout = bool(
+        (not finished)
+        and (max_duration_ms is not None)
+        and (not stopped_by_limit)
+        and (not stopped_by_node_limit)
+    )
 
     return {
         "algo": algo_key,
@@ -117,6 +130,8 @@ def simulate_algorithm(
         "stopped_by_limit": stopped_by_limit,
         "max_duration_ms": max_duration_ms,
         "stopped_by_timeout": stopped_by_timeout,
+        "max_nodes_explored": max_nodes_explored,
+        "stopped_by_node_limit": stopped_by_node_limit,
         "nodes_explored": nodes_explored,
         "frontier_peak": frontier_peak,
         "frontier_remaining": frontier_remaining,
@@ -211,17 +226,28 @@ def compare_algorithms():
             if max_duration_ms <= 0:
                 max_duration_ms = None
 
+        max_nodes_explored = body.get("max_nodes_explored", None)
+        try:
+            if max_nodes_explored is not None:
+                max_nodes_explored = int(max_nodes_explored)
+                if max_nodes_explored <= 0:
+                    max_nodes_explored = None
+        except (TypeError, ValueError):
+            max_nodes_explored = None
+
         result_a = simulate_algorithm(
             algo_a,
             max_steps=max_steps,
             # sample_limit=sample_limit,
             max_duration_ms=max_duration_ms,
+            max_nodes_explored=max_nodes_explored,
         )
         result_b = simulate_algorithm(
             algo_b,
             max_steps=max_steps,
             # sample_limit=sample_limit,
             max_duration_ms=max_duration_ms,
+            max_nodes_explored=max_nodes_explored,
         )
 
         winner = "none"
