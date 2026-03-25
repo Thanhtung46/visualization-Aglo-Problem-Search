@@ -860,7 +860,15 @@ async function solveInstant() {
 
     setStatus(`Đang giải ${state.currentAlgorithm.toUpperCase()}...`);
     try {
-        const res = await fetch(buildApiUrl("/solve"));
+        const res = await fetch(`${API_BASE}/solve`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                algo: state.currentAlgorithm,
+                initial_state: state.currentInitialState,
+                max_steps: 200000,
+            }),
+        });
         const data = await res.json();
         if (!res.ok) return handleUnsupportedAlgo();
 

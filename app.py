@@ -287,29 +287,73 @@ def plan_algorithm():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/solve', methods=['GET'])
+@app.route('/solve', methods=['GET', 'POST'])
 def solve():
+    from collections import deque
+    from engines.puzzle_common import GOAL_STATE, get_neighbors, reconstruct_path
+
     try:
-        algo_key = request.args.get("algo", DEFAULT_ALGO)
-        max_steps = int(request.args.get("max_steps", 200000))
+        body = request.get_json(silent=True) or {}
+        algo_key = (body.get("algo") or request.args.get("algo", DEFAULT_ALGO)).lower()
+        initial_state_raw = body.get("initial_state") or request.args.get("initial_state")
 
-        engine = get_engine(algo_key)  # ← dùng engine đang có, không tạo mới
-        if engine is None:
-            return jsonify({"error": f"Unsupported algorithm: {algo_key}"}), 400
+        # Normalize initial_state từ frontend
+        start = _normalize_state(initial_state_raw)
+        if start is None:
+            # fallback: dùng initial_state của engine global
+            engine = get_engine(algo_key)
+            if engine is None:
+                return jsonify({"error": f"Unsupported algorithm: {algo_key}"}), 400
+            start = engine.initial_state
 
-        engine.reset()  # reset về initial_state hiện tại (đã random rồi)
         started = time.perf_counter()
-        nodes_explored = 0
-        final_path = []
-        success = False
 
-        for _ in range(max_steps):
-            payload = engine.step()
-            nodes_explored = int(payload.get("nodes_explored", nodes_explored))
-            if payload.get("finished"):
-                success = bool(payload.get("success"))
-                final_path = payload.get("final_path", [])
-                break
+        # --- BFS ---
+        if algo_key == "bfs":
+            queue = deque([start])
+            seen = {start}
+            parent = {start: None}
+            nodes_explored = 0
+            success = False
+            final_path = []
+
+            while queue:
+                current = queue.popleft()
+                nodes_explored += 1
+                if current == GOAL_STATE:
+                    success = True
+                    final_path = [list(s) for s in reconstruct_path(parent, current)]
+                    break
+                for nb in get_neighbors(current):
+                    if nb not in seen:
+                        seen.add(nb)
+                        parent[nb] = current
+                        queue.append(nb)
+
+        # --- DFS ---
+        elif algo_key == "dfs":
+            stack = [start]
+            seen = {start}
+            parent = {start: None}
+            nodes_explored = 0
+            success = False
+            final_path = []
+
+            while stack:
+                current = stack.pop()
+                nodes_explored += 1
+                if current == GOAL_STATE:
+                    success = True
+                    final_path = [list(s) for s in reconstruct_path(parent, current)]
+                    break
+                for nb in get_neighbors(current):
+                    if nb not in seen:
+                        seen.add(nb)
+                        parent[nb] = current
+                        stack.append(nb)
+
+        else:
+            return jsonify({"error": f"Unsupported algorithm: {algo_key}"}), 400
 
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         return jsonify({
