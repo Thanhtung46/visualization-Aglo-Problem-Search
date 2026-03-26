@@ -377,7 +377,62 @@ def solve():
                         seen.add(nb)
                         parent[nb] = current
                         stack.append(nb)
+        # --- UCS (Uniform Cost Search) ---
+        elif algo_key == "ucs":
+            import heapq
+            # queue chứa các tuple: (cost, state)
+            pq = [(0, start)]
+            seen = {start: 0} # Lưu trữ chi phí thấp nhất đến mỗi state
+            parent = {start: None}
+            nodes_explored = 0
+            success = False
+            final_path = []
 
+            while pq:
+                cost, current = heapq.heappop(pq)
+                nodes_explored += 1
+
+                if current == GOAL_STATE:
+                    success = True
+                    final_path = [list(s) for s in reconstruct_path(parent, current)]
+                    break
+
+                for nb in get_neighbors(current):
+                    new_cost = cost + 1
+                    # Nếu chưa thấy state này HOẶC tìm thấy đường đi rẻ hơn
+                    if nb not in seen or new_cost < seen[nb]:
+                        seen[nb] = new_cost
+                        parent[nb] = current
+                        heapq.heappush(pq, (new_cost, nb))
+        # --- IDDFS (Iterative Deepening DFS) ---
+        elif algo_key == "iddfs":
+            def dls(current,GOAL_STATE, limit, path_set):
+                if current ==GOAL_STATE:
+                    return [list(current)]
+                if limit <= 0:
+                    return None
+                
+                for nb in get_neighbors(current):
+                    if nb not in path_set:
+                        path_set.add(nb)
+                        result = dls(nb, GOAL_STATE, limit - 1, path_set)
+                        if result:
+                            return [list(current)] + result
+                        path_set.remove(nb) # Backtracking
+                return None
+
+            success = False
+            final_path = []
+            nodes_explored = 0
+            for depth in range(32):
+                # Mỗi lần tăng depth, ta reset lại tập hợp các node đã đi qua của nhánh đó
+                path_set = {start}
+                result = dls(start, GOAL_STATE, depth, path_set)
+                
+                if result:
+                    success = True
+                    final_path = result
+                    break
         else:
             return jsonify({"error": f"Unsupported algorithm: {algo_key}"}), 400
 
