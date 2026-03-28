@@ -142,7 +142,35 @@ class BeamSearch8PuzzleEngine(BaseAlgorithmEngine):
         return self.reset()
 
     def algorithm_source(self):
-        return """def beam_search_8puzzle(start, goal, beam_width=3):
-    # Hàm F tính Manhattan distance
-    pass
+        return """def beam_search(start, goal, W=3):
+    current_level = [start]
+    parent = {start: None}
+
+    while current_level:
+        next_candidates = []
+        for state in current_level:
+            if state == goal:
+                return reconstruct_path(parent, state)
+            
+            for neighbor in get_neighbors(state):
+                if neighbor not in parent:
+                    parent[neighbor] = state
+                    next_candidates.append(neighbor)
+        
+        # Sắp xếp các node con theo hàm F (Manhattan Distance)
+        # Chỉ giữ lại W node tốt nhất cho tầng kế tiếp
+        next_candidates.sort(key=calculate_F)
+        current_level = next_candidates[:W]
+        
+    return None
+
+def calculate_F(state):
+    # Tổng khoảng cách Manhattan từ vị trí hiện tại đến đích
+    dist = 0
+    for i, val in enumerate(state):
+        if val != 0:
+            target_r, target_c = (val - 1) // 3, (val - 1) % 3
+            curr_r, curr_c = i // 3, i % 3
+            dist += abs(target_r - curr_r) + abs(target_c - curr_c)
+    return dist
 """
