@@ -146,6 +146,30 @@ class Bidirectional8PuzzleEngine(BaseAlgorithmEngine):
 
     def algorithm_source(self):
         return """def bidirectional_search(start, goal):
-    # Trả về mã nguồn của thuật toán (có thể custom sau)
-    pass
+    fwd_queue = deque([start])
+    bwd_queue = deque([goal])
+    fwd_seen = {start: None}
+    bwd_seen = {goal: None}
+
+    while fwd_queue and bwd_queue:
+        # Bước tiến phía trước (Forward)
+        fwd_curr = fwd_queue.popleft()
+        if fwd_curr in bwd_seen:
+            return reconstruct_bidirectional_path(fwd_seen, bwd_seen, fwd_curr)
+        
+        for neighbor in get_neighbors(fwd_curr):
+            if neighbor not in fwd_seen:
+                fwd_seen[neighbor] = fwd_curr
+                fwd_queue.append(neighbor)
+
+        # Bước tiến phía sau (Backward)
+        bwd_curr = bwd_queue.popleft()
+        if bwd_curr in fwd_seen:
+            return reconstruct_bidirectional_path(fwd_seen, bwd_seen, bwd_curr)
+            
+        for neighbor in get_neighbors(bwd_curr):
+            if neighbor not in bwd_seen:
+                bwd_seen[neighbor] = bwd_curr
+                bwd_queue.append(neighbor)
+    return None
 """
