@@ -12,6 +12,7 @@ class IDDFS8PuzzleEngine(BaseAlgorithmEngine):
     key = "iddfs"
     display_name = "Iterative Deepening DFS (IDDFS)"
     source_filename = "iddfs_algorithm.py"
+    source_title = "IDDFS Algorithm Source"
     
     TRACE_PROGRAM = [
         "for limit from 0 to max_depth:",

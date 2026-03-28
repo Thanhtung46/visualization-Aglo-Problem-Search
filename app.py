@@ -456,6 +456,29 @@ def solve():
             success = engine.search_state["solved"]
             nodes_explored = engine.search_state["nodes_explored"]
             final_path = payload.get("final_path", [])
+        
+        # --- ASTAR SEARCH ---
+        elif algo_key == "astar":
+            engine = get_engine("astar")
+            engine.initial_state = start
+            engine.reset()
+            # Đặt giới hạn an toàn 50000 node để tránh tràn bộ nhớ nếu giải quá lâu
+            while not engine.search_state["finished"] and engine.search_state["nodes_explored"] < 50000:
+                payload = engine.step()
+            success = engine.search_state["solved"]
+            nodes_explored = engine.search_state["nodes_explored"]
+            final_path = payload.get("final_path", [])
+
+        # --- IDASTAR SEARCH ---
+        elif algo_key == "idastar":
+            engine = get_engine("idastar")
+            engine.initial_state = start
+            engine.reset()
+            while not engine.search_state["finished"] and engine.search_state["nodes_explored"] < 50000:
+                payload = engine.step()
+            success = engine.search_state["solved"]
+            nodes_explored = engine.search_state["nodes_explored"]
+            final_path = payload.get("final_path", [])
 
         else:
             return jsonify({"error": f"Unsupported algorithm: {algo_key}"}), 400

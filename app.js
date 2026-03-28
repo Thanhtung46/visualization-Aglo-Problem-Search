@@ -356,10 +356,10 @@ async function precomputeGoalPlan() {
         }
         if (typeof data.total_path_cost === "number") {
             state.precomputedTotalCost = data.total_path_cost;
+            setRemainingSteps(state.precomputedTotalCost);
         }
         if (typeof data.nodes_explored === "number" && data.nodes_explored > 0) {
             state.precomputedExploreSteps = data.nodes_explored;
-            setRemainingSteps(state.precomputedExploreSteps);
             return;
         }
         if (data.stopped_by_timeout) {
@@ -898,6 +898,25 @@ function showFrontendSource() {
     renderHighlightedSource(state.frontendSourceCache || "Không có dữ liệu.", "javascript");
 }
 
+async function showAlgorithmSource() {
+    try {
+        // Lấy tên thuật toán hiện tại từ state
+        const currentAlgo = state.currentAlgorithm || "bfs";
+        const res = await fetch(`${API_BASE}/source/${currentAlgo}`);
+        const data = await res.json();
+        
+        if (data.ok) {
+            document.getElementById("source-title").innerText = data.title;
+            document.getElementById("source-code").innerText = data.source;
+        } else {
+            document.getElementById("source-code").innerText = "Lỗi: " + data.error;
+        }
+    } catch (err) {
+        document.getElementById("source-code").innerText = "Lỗi kết nối backend để tải mã nguồn.";
+    }
+}
+
+
 function escapeHtml(text) {
     return text
         .replace(/&/g, "&amp;")
@@ -931,7 +950,7 @@ function setupAlgorithmMenu() {
             btn.classList.add("active");
             state.currentAlgorithm = btn.dataset.algo;
             const name = btn.innerText.trim();
-            getById("algo-label").innerText = `Thuật toán hiện tại: ${name}`;
+            //getById("algo-label").innerText = `Thuật toán hiện tại: ${name}`;
             getById("nodes").innerText = "0";
             getById("frontier").innerText = "0";
             getById("time").innerText = "-";
@@ -944,7 +963,9 @@ function setupAlgorithmMenu() {
             renderTraceProgram(-1);
             renderTraceLog();
             precomputeGoalPlan();
+            showAlgorithmSource();
             loadSourceCode();
+            
         });
     });
 }
@@ -1021,6 +1042,7 @@ window.showBfsSource = showBfsSource;
 window.showFrontendSource = showFrontendSource;
 window.compareAlgorithms = compareAlgorithms;
 window.toggleCompareMode = toggleCompareMode;
+window.showAlgorithmSource = showAlgorithmSource;
 
 render(state.currentInitialState, false);
 resetHistory(state.currentInitialState);

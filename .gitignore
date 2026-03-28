@@ -1,0 +1,16 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Môi trường ảo (Virtual Environment)
+venv/
+env/
+
+# File biến môi trường, bảo mật
+.env
+
+# Hệ điều hành (Mac)
+.DS_Store
+
+# (Nếu bạn dùng Node.js cho Frontend)
+node_modules/
