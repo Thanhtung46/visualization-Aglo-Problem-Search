@@ -433,6 +433,30 @@ def solve():
                     success = True
                     final_path = result
                     break
+
+        # --- BIDIRECTIONAL SEARCH ---
+        elif algo_key == "bidirectional":
+            engine = get_engine("bidirectional")
+            engine.initial_state = start
+            engine.reset()
+            while not engine.search_state["finished"]:
+                payload = engine.step()
+            success = engine.search_state["solved"]
+            nodes_explored = engine.search_state["nodes_explored"]
+            final_path = payload.get("final_path", [])
+
+        # --- BEAM SEARCH ---
+        elif algo_key == "beam":
+            engine = get_engine("beam")
+            engine.initial_state = start
+            engine.reset()
+            # Giới hạn an toàn để tránh vòng lặp vô tận trong solve instant
+            while not engine.search_state["finished"] and engine.search_state["nodes_explored"] < 10000:
+                payload = engine.step()
+            success = engine.search_state["solved"]
+            nodes_explored = engine.search_state["nodes_explored"]
+            final_path = payload.get("final_path", [])
+
         else:
             return jsonify({"error": f"Unsupported algorithm: {algo_key}"}), 400
 
