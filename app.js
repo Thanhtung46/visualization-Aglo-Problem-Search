@@ -34,7 +34,7 @@ function getDelayMs() {
     const delayInput = getById("delay-input");
     const parsed = Number(delayInput.value);
     if (!Number.isFinite(parsed)) return 600;
-    const clamped = Math.min(5000, Math.max(50, parsed));
+    const clamped = Math.min(5000, Math.max(0, parsed));
     delayInput.value = String(clamped);
     return clamped;
 }
