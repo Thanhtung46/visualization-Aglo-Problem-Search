@@ -335,8 +335,8 @@ async function precomputeGoalPlan() {
     state.precomputedExploreSteps = null;
     setRemainingSteps("Dang tinh...");
     const isDfs = state.currentAlgorithm === "dfs";
-    const planMaxSteps = isDfs ? 120000 : 200000;
-    const planMaxDurationMs = isDfs ? 1500 : 3000;
+    const planMaxSteps = isDfs ? 500000 : 200000;
+    const planMaxDurationMs = isDfs ? 10000 : 3000;
     try {
         const res = await fetch(`${API_BASE}/plan`, {
             method: "POST",
