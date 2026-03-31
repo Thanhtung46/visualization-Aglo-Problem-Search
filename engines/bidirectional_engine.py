@@ -36,6 +36,7 @@ class Bidirectional8PuzzleEngine(BaseAlgorithmEngine):
             "bwd_queue": deque([GOAL_STATE]),
             "fwd_seen": {state: None},  # state -> parent
             "bwd_seen": {GOAL_STATE: None}, # state -> parent
+            "turn": "forward",
             "finished": False,
             "solved": False,
             "start_time": None,
@@ -64,38 +65,41 @@ class Bidirectional8PuzzleEngine(BaseAlgorithmEngine):
         if self.search_state["nodes_explored"] == 0:
             self.search_state["start_time"] = time.time()
 
-        # --- FORWARD STEP ---
-        fwd_curr = self.search_state["fwd_queue"].popleft()
-        self.search_state["nodes_explored"] += 1
-        trace_step.append(self._push_trace(2, f"Forward pop: {list(fwd_curr)}"))
+        if self.search_state["turn"] == "forward":
+            fwd_curr = self.search_state["fwd_queue"].popleft()
+            self.search_state["nodes_explored"] += 1
+            trace_step.append(self._push_trace(2, f"Forward pop: {list(fwd_curr)}"))
 
-        if fwd_curr in self.search_state["bwd_seen"]:
-            return self._finish_with_success(fwd_curr, trace_step, 3, "Forward intersected with backward!")
+            if fwd_curr in self.search_state["bwd_seen"]:
+                return self._finish_with_success(fwd_curr, trace_step, 3, "Forward intersected with backward!")
 
-        for neighbor in get_neighbors(fwd_curr):
-            if neighbor not in self.search_state["fwd_seen"]:
-                self.search_state["fwd_seen"][neighbor] = fwd_curr
-                self.search_state["fwd_queue"].append(neighbor)
-        trace_step.append(self._push_trace(4, "Expanded forward neighbors."))
+            for neighbor in get_neighbors(fwd_curr):
+                if neighbor not in self.search_state["fwd_seen"]:
+                    self.search_state["fwd_seen"][neighbor] = fwd_curr
+                    self.search_state["fwd_queue"].append(neighbor)
+            trace_step.append(self._push_trace(4, "Expanded forward neighbors."))
+            self.search_state["turn"] = "backward"
+            current_state = fwd_curr
+        else:
+            bwd_curr = self.search_state["bwd_queue"].popleft()
+            self.search_state["nodes_explored"] += 1
+            trace_step.append(self._push_trace(5, f"Backward pop: {list(bwd_curr)}"))
 
-        # --- BACKWARD STEP ---
-        bwd_curr = self.search_state["bwd_queue"].popleft()
-        self.search_state["nodes_explored"] += 1
-        trace_step.append(self._push_trace(5, f"Backward pop: {list(bwd_curr)}"))
+            if bwd_curr in self.search_state["fwd_seen"]:
+                return self._finish_with_success(bwd_curr, trace_step, 6, "Backward intersected with forward!")
 
-        if bwd_curr in self.search_state["fwd_seen"]:
-            return self._finish_with_success(bwd_curr, trace_step, 6, "Backward intersected with forward!")
-
-        for neighbor in get_neighbors(bwd_curr):
-            if neighbor not in self.search_state["bwd_seen"]:
-                self.search_state["bwd_seen"][neighbor] = bwd_curr
-                self.search_state["bwd_queue"].append(neighbor)
-        trace_step.append(self._push_trace(7, "Expanded backward neighbors."))
+            for neighbor in get_neighbors(bwd_curr):
+                if neighbor not in self.search_state["bwd_seen"]:
+                    self.search_state["bwd_seen"][neighbor] = bwd_curr
+                    self.search_state["bwd_queue"].append(neighbor)
+            trace_step.append(self._push_trace(7, "Expanded backward neighbors."))
+            self.search_state["turn"] = "forward"
+            current_state = bwd_curr
 
         total_frontier = len(self.search_state["fwd_queue"]) + len(self.search_state["bwd_queue"])
         return self._with_trace(
             {
-                "current_state": list(fwd_curr),
+                "current_state": list(current_state),
                 "frontier_size": total_frontier,
                 "nodes_explored": self.search_state["nodes_explored"],
                 "finished": False,
@@ -114,9 +118,10 @@ class Bidirectional8PuzzleEngine(BaseAlgorithmEngine):
         
         path_bwd.reverse() # Reverse from goal to intersect
         final_path = path_fwd + path_bwd[1:] # Avoid duplicating the intersect node
+        goal_state = final_path[-1] if final_path else intersect_node
 
         return self._with_trace({
-            "current_state": list(intersect_node),
+            "current_state": list(goal_state),
             "nodes_explored": self.search_state["nodes_explored"],
             "processing_time": f"{time.time() - self.search_state['start_time']:.4f}s",
             "final_path": [list(s) for s in final_path],

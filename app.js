@@ -8,6 +8,8 @@ const state = {
     autoRun: false,
     isFetchingStep: false,
     traversalHistory: [],
+    selectedHistoryIndex: -1,
+    selectedSolutionIndex: -1,
     traceProgram: [],
     traceHistory: [],
     bfsSourceCache: "",
@@ -15,14 +17,17 @@ const state = {
     currentSourceLanguage: "python",
     compareMode: false,
     compareAnimationTimer: null,
+    compareLoadingBoardsTimer: null,
     compareIsRunning: false,
+    planIsRunning: false,
     precomputedTotalCost: null,
     precomputedExploreSteps: null,
     planRequestId: 0,
     solutionPath: [],
+    compareSelectedPathIndexA: -1,
+    compareSelectedPathIndexB: -1,
     lastRenderedBoard: null,
 };
-const MAX_HISTORY_STEPS = 180;
 // Rút ngắn thời lượng flash để animation compare chạy nhanh hơn.
 const FLASH_ANIM_MS = 180;
 
@@ -36,6 +41,20 @@ function getDelayMs() {
     if (!Number.isFinite(parsed)) return 600;
     const clamped = Math.min(5000, Math.max(0, parsed));
     delayInput.value = String(clamped);
+    return clamped;
+}
+
+function clampNumberInputValue(inputEl, fallbackValue = null) {
+    if (!inputEl) return fallbackValue;
+    const parsed = Number(inputEl.value);
+    const min = Number(inputEl.min);
+    const max = Number(inputEl.max);
+    const safeMin = Number.isFinite(min) ? min : -Infinity;
+    const safeMax = Number.isFinite(max) ? max : Infinity;
+    const fallback = fallbackValue ?? (Number.isFinite(safeMin) ? safeMin : 0);
+    const base = Number.isFinite(parsed) ? parsed : fallback;
+    const clamped = Math.min(safeMax, Math.max(safeMin, base));
+    inputEl.value = String(clamped);
     return clamped;
 }
 
@@ -68,6 +87,7 @@ let _prevBoard = null; // thêm dòng này ở top-level, cạnh const state = {
 function render(boardState, movedNum = null) {
   const container = getById("puzzle-container");
   if (!boardState) return;
+  const changedIndices = _prevBoard ? getChangedCellIndices(_prevBoard, boardState) : [];
 
   // Bước FIRST: đo vị trí cũ
   const oldPositions = {};
@@ -96,6 +116,7 @@ function render(boardState, movedNum = null) {
     const dy = oldPositions[num].top - newPos.top;
     if (dx === 0 && dy === 0) return;
 
+    el.style.setProperty("--tile-order", String(changedIndices.indexOf(i)));
     el.style.transform = `translate(${dx}px, ${dy}px)`;
     el.offsetHeight; // force reflow
     el.classList.add("animating");
@@ -107,6 +128,18 @@ function render(boardState, movedNum = null) {
       setTimeout(() => el.classList.remove("moved"), 180);
     }, { once: true });
   });
+
+  if (changedIndices.length > 0) {
+    changedIndices.forEach((idx, order) => {
+      const el = container.children[idx];
+      if (!el) return;
+      el.style.setProperty("--tile-order", String(order));
+      el.classList.remove("tile-changed-flash");
+      el.offsetHeight;
+      el.classList.add("tile-changed-flash");
+    });
+    scheduleMainTileFlashClear(container);
+  }
 
   _prevBoard = [...boardState];
 }
@@ -137,7 +170,9 @@ function renderPath(pathStates = []) {
 
     pathStates.forEach((nodeState, idx) => {
         const node = document.createElement("div");
-        node.className = "path-node" + (idx === pathStates.length - 1 ? " current" : "");
+        const isCurrent = idx === pathStates.length - 1;
+        const isSelected = idx === state.selectedHistoryIndex;
+        node.className = "path-node" + (isCurrent ? " current" : "") + (isSelected ? " selected" : "");
         const grid = document.createElement("div");
         grid.className = "mini-grid";
 
@@ -150,6 +185,16 @@ function renderPath(pathStates = []) {
 
         node.appendChild(grid);
         node.appendChild(step);
+        node.addEventListener("click", () => {
+            if (state.compareMode) return;
+            // Cho phép xem lại trạng thái đã duyệt mà không can thiệp logic thuật toán.
+            const prev = idx > 0 ? pathStates[idx - 1] : null;
+            const movedNum = prev ? nodeState[prev.indexOf(0)] : null;
+            state.selectedHistoryIndex = idx;
+            render(nodeState, movedNum);
+            renderPath(pathStates);
+            setStatus(`Đang xem lại: Bước ${idx}`);
+        });
         pathContainer.appendChild(node);
     });
 
@@ -164,7 +209,9 @@ function renderSolutionPath(pathStates = []) {
 
     pathStates.forEach((nodeState, idx) => {
         const node = document.createElement("div");
-        node.className = "path-node" + (idx === pathStates.length - 1 ? " current" : "");
+        const isCurrent = idx === pathStates.length - 1;
+        const isSelected = idx === state.selectedSolutionIndex;
+        node.className = "path-node" + (isCurrent ? " current" : "") + (isSelected ? " selected" : "");
         const grid = document.createElement("div");
         grid.className = "mini-grid";
 
@@ -177,6 +224,15 @@ function renderSolutionPath(pathStates = []) {
 
         node.appendChild(grid);
         node.appendChild(step);
+        node.addEventListener("click", () => {
+            if (state.compareMode) return;
+            const prev = idx > 0 ? pathStates[idx - 1] : null;
+            const movedNum = prev ? nodeState[prev.indexOf(0)] : null;
+            state.selectedSolutionIndex = idx;
+            render(nodeState, movedNum);
+            renderSolutionPath(pathStates);
+            setStatus(idx === pathStates.length - 1 ? "Đang xem lại: Goal" : `Đang xem lại đường đi: bước ${idx}`);
+        });
         container.appendChild(node);
     });
 
@@ -237,14 +293,15 @@ function pushHistoryStep(stepState) {
     if (isSameState(last, stepState)) return;
 
     state.traversalHistory.push(stepState);
-    if (state.traversalHistory.length > MAX_HISTORY_STEPS) {
-        state.traversalHistory.shift();
-    }
+    state.selectedHistoryIndex = state.traversalHistory.length - 1;
     renderPath(state.traversalHistory);
 }
 
 function resetHistory(initialState) {
-    state.traversalHistory = Array.isArray(initialState) ? [initialState] : [];
+    // Timeline traversal chỉ hiển thị các node đã thực sự được engine duyệt.
+    // Trạng thái ban đầu vẫn hiển thị ở board chính, nhưng không tính là "đã duyệt".
+    state.traversalHistory = [];
+    state.selectedHistoryIndex = -1;
     renderPath(state.traversalHistory);
 }
 
@@ -254,6 +311,19 @@ function setStatus(message) {
 
 function setRemainingSteps(value) {
     getById("remaining-steps").innerText = value == null ? "-" : String(value);
+}
+
+function updateRemainingEstimate(explored, finished, success) {
+    if (finished && success) {
+        setRemainingSteps(0);
+        return;
+    }
+    if (typeof state.precomputedExploreSteps === "number") {
+        const remaining = state.precomputedExploreSteps - explored;
+        setRemainingSteps(Math.max(remaining, 0));
+        return;
+    }
+    setRemainingSteps("-");
 }
 
 function setButtonClass(btn, className, on) {
@@ -295,6 +365,8 @@ function syncTopbarButtons() {
         if (compareBtn) {
             setButtonDisabled(compareBtn, true);
             compareBtn.classList.add("btn-busy");
+            // Đảm bảo text không bị reset trong lúc compare đang chạy.
+            compareBtn.innerText = "Comparing...";
         }
         return;
     }
@@ -310,6 +382,17 @@ function syncTopbarButtons() {
         setButtonDisabled(compareBtn, false);
         setButtonClass(compareModeBtn, "btn-running", true);
         setButtonClass(compareModeBtn, "btn-paused", false);
+        return;
+    }
+
+    if (state.planIsRunning) {
+        setButtonDisabled(solveBtn, true);
+        setButtonDisabled(autoRunBtn, true);
+        setButtonDisabled(nextStepBtn, true);
+        setButtonDisabled(pauseBtn, true);
+        setButtonDisabled(resetBtn, false);
+        setButtonDisabled(randomBtn, false);
+        setButtonDisabled(compareBtn, false);
         return;
     }
 
@@ -329,14 +412,14 @@ function syncTopbarButtons() {
     setButtonClass(pauseBtn, "btn-running", Boolean(state.autoRun && !state.isPaused));
 }
 
-async function precomputeGoalPlan() {
+async function precomputeGoalPlan() { // xem lại
     const requestId = ++state.planRequestId;
+    state.planIsRunning = true;
     state.precomputedTotalCost = null;
     state.precomputedExploreSteps = null;
     setRemainingSteps("Dang tinh...");
-    const isDfs = state.currentAlgorithm === "dfs";
-    const planMaxSteps = isDfs ? 500000 : 200000;
-    const planMaxDurationMs = isDfs ? 10000 : 3000;
+    syncTopbarButtons();
+    const planMaxSteps = 500000;
     try {
         const res = await fetch(`${API_BASE}/plan`, {
             method: "POST",
@@ -345,7 +428,6 @@ async function precomputeGoalPlan() {
                 algo: state.currentAlgorithm,
                 initial_state: state.currentInitialState,
                 max_steps: planMaxSteps,
-                max_duration_ms: planMaxDurationMs,
             }),
         });
         const data = await res.json();
@@ -354,16 +436,13 @@ async function precomputeGoalPlan() {
             setRemainingSteps("-");
             return;
         }
-        if (typeof data.total_path_cost === "number") {
-            state.precomputedTotalCost = data.total_path_cost;
-            setRemainingSteps(state.precomputedTotalCost);
-        }
-        if (typeof data.nodes_explored === "number" && data.nodes_explored > 0) {
+        if (data.finished && data.success && typeof data.nodes_explored === "number" && data.nodes_explored > 0) {
             state.precomputedExploreSteps = data.nodes_explored;
+            setRemainingSteps(state.precomputedExploreSteps);
             return;
         }
         if (data.stopped_by_timeout) {
-            setRemainingSteps("Uoc luong timeout");
+            setRemainingSteps("Timeout plan");
             return;
         }
         setRemainingSteps(data.finished ? "Khong tim thay" : "Vuot gioi han");
@@ -372,6 +451,10 @@ async function precomputeGoalPlan() {
         state.precomputedTotalCost = null;
         state.precomputedExploreSteps = null;
         setRemainingSteps("-");
+    } finally {
+        if (requestId !== state.planRequestId) return;
+        state.planIsRunning = false;
+        syncTopbarButtons();
     }
 }
 
@@ -392,7 +475,16 @@ function renderCompareResult(result) {
         algo_b: "B",
         none: "Khong ro",
     };
-    summary.innerText = `Ket qua compare (winner: ${winnerMap[result.winner] || "Khong ro"})`;
+    const timeoutNote = (result.algo_a?.stopped_by_timeout || result.algo_b?.stopped_by_timeout)
+        ? " | Có thuật toán bị dừng do timeout backend"
+        : "";
+    summary.innerText = `Ket qua compare (winner: ${winnerMap[result.winner] || "Khong ro"})${timeoutNote}`;
+
+    function updateCompareBoardFromPath(side, boardState) {
+        if (!Array.isArray(boardState) || boardState.length !== 9) return;
+        const targetId = side === "A" ? "compare-side-a-board" : "compare-side-b-board";
+        renderMiniBoard(targetId, boardState);
+    }
 
     function createMetricCard(label, data) {
         const card = document.createElement("div");
@@ -414,17 +506,17 @@ function renderCompareResult(result) {
             // `Supported: ${data.supported ? "Yes" : "No"}`,
             `Finished: ${data.finished ? "Yes" : "No"}`,
             `Success: ${data.success ? "Yes" : "No"}`,
-            // `Stopped by timeout: ${data.stopped_by_timeout ? "Yes" : "No"}`,
+            `Stopped by timeout: ${data.stopped_by_timeout ? "Yes" : "No"}`,
             // `Stopped by max steps: ${data.stopped_by_limit ? "Yes" : "No"}`,
-            // `Time budget (ms): ${data.max_duration_ms ?? "-"}`,
+            `Time budget (ms): ${data.max_duration_ms ?? "-"}`,
             // `Max steps: ${data.max_steps ?? "-"}`,
             `Node explore limit: ${data.max_nodes_explored ?? "-"}`,
-            // `Stopped by node limit: ${data.stopped_by_node_limit ? "Yes" : "No"}`,
+            `Stopped by node limit: ${data.stopped_by_node_limit ? "Yes" : "No"}`,
             `Path found: ${pathFound ? "Yes" : "No"}`,
-            // `Path length: ${pathLength ?? "-"}`,
-            // `Total path cost: ${totalPathCost ?? "-"}`,
+            `Path length: ${pathLength ?? "-"}`,
+            `Total path cost: ${totalPathCost ?? "-"}`,
             `Nodes explored: ${data.nodes_explored ?? "-"}`,
-            `Total path cost: ${data.steps_executed ?? "-"}`,
+            `Steps executed: ${data.steps_executed ?? "-"}`,
             `Peak frontier: ${data.frontier_peak ?? "-"}`,
             // `Frontier remaining: ${data.frontier_remaining ?? "-"}`,
             // `Processing time (ms): ${data.processing_time_ms ?? data.elapsed_ms ?? "-"}`,
@@ -440,27 +532,39 @@ function renderCompareResult(result) {
         return card;
     }
 
-    function createTraversalStrip(label, data) {
+    function createPathStrip(label, data, side) {
         const wrap = document.createElement("div");
         wrap.className = "compare-traversal-block";
         const title = document.createElement("div");
         title.className = "compare-title";
-        title.innerText = `${label} traversal sample`;
+        title.innerText = `${label} path (Start → Goal)`;
         wrap.appendChild(title);
 
         const strip = document.createElement("div");
-        strip.className = "compare-strip";
-        const samples = Array.isArray(data.sampled_traversal) ? data.sampled_traversal : [];
+        strip.className = "compare-strip compare-path-strip";
+        const path = Array.isArray(data.final_path) ? data.final_path : [];
+        const pathFound = typeof data.path_found === "boolean"
+            ? data.path_found
+            : Boolean(data.success && (data.final_path_length ?? 0) > 0);
 
-        if (!samples.length) {
+        if (!pathFound || !path.length) {
+            if (side === "A") state.compareSelectedPathIndexA = -1;
+            if (side === "B") state.compareSelectedPathIndexB = -1;
             const empty = document.createElement("div");
             empty.className = "compare-line";
-            empty.innerText = "Khong co sample.";
+            empty.innerText = "Chưa tìm được đường đi đến goal.";
             strip.appendChild(empty);
         } else {
-            samples.forEach(boardState => {
+            const selectedIndex = side === "A" ? state.compareSelectedPathIndexA : state.compareSelectedPathIndexB;
+            const activeIndex = selectedIndex >= 0 && selectedIndex < path.length ? selectedIndex : path.length - 1;
+            if (side === "A") state.compareSelectedPathIndexA = activeIndex;
+            if (side === "B") state.compareSelectedPathIndexB = activeIndex;
+            updateCompareBoardFromPath(side, path[activeIndex]);
+
+            function appendState(boardState, idx) {
                 const stateBox = document.createElement("div");
-                stateBox.className = "compare-state";
+                const isSelected = idx === activeIndex;
+                stateBox.className = "compare-state" + (isSelected ? " selected" : "");
                 const grid = document.createElement("div");
                 grid.className = "compare-grid";
                 boardState.forEach(num => {
@@ -469,9 +573,23 @@ function renderCompareResult(result) {
                     tile.innerText = num === 0 ? "" : String(num);
                     grid.appendChild(tile);
                 });
+                const step = document.createElement("div");
+                step.className = "compare-step-label";
+                if (idx === 0) step.innerText = "Start";
+                else if (idx === path.length - 1) step.innerText = "Goal";
+                else step.innerText = `Bước ${idx}`;
                 stateBox.appendChild(grid);
+                stateBox.appendChild(step);
+                stateBox.addEventListener("click", () => {
+                    if (side === "A") state.compareSelectedPathIndexA = idx;
+                    if (side === "B") state.compareSelectedPathIndexB = idx;
+                    updateCompareBoardFromPath(side, boardState);
+                    renderCompareResult(result);
+                });
                 strip.appendChild(stateBox);
-            });
+            }
+
+            path.forEach((s, i) => appendState(s, i));
         }
 
         wrap.appendChild(strip);
@@ -480,18 +598,63 @@ function renderCompareResult(result) {
 
     metrics.appendChild(createMetricCard("Algo A", result.algo_a || {}));
     metrics.appendChild(createMetricCard("Algo B", result.algo_b || {}));
-    traversal.appendChild(createTraversalStrip("Algo A", result.algo_a || {}));
-    traversal.appendChild(createTraversalStrip("Algo B", result.algo_b || {}));
+    traversal.appendChild(createPathStrip("Algo A", result.algo_a || {}, "A"));
+    traversal.appendChild(createPathStrip("Algo B", result.algo_b || {}, "B"));
 }
 
-function getCompareAnimIntervalMs(frameCount) {
-    // Tua nhanh compare theo ngân sách thời gian cố định.
-    // (Các ô animation nhiều thì interval càng nhỏ để tổng thời gian xấp xỉ không đổi.)
-    const sec = 15;
-    const budgetMs = sec * 1000;
-    const ticks = Math.max(frameCount - 1, 1);
-    const raw = Math.floor(budgetMs / ticks);
-    return Math.max(1, Math.min(300, raw));
+function getBoardNeighbors(boardState) {
+    if (!Array.isArray(boardState) || boardState.length !== 9) return [];
+    const zeroIdx = boardState.indexOf(0);
+    if (zeroIdx < 0) return [];
+    const row = Math.floor(zeroIdx / 3);
+    const col = zeroIdx % 3;
+    const dirs = [
+        [row - 1, col],
+        [row + 1, col],
+        [row, col - 1],
+        [row, col + 1],
+    ];
+    const out = [];
+    dirs.forEach(([nr, nc]) => {
+        if (nr < 0 || nr > 2 || nc < 0 || nc > 2) return;
+        const nextIdx = nr * 3 + nc;
+        const next = [...boardState];
+        [next[zeroIdx], next[nextIdx]] = [next[nextIdx], next[zeroIdx]];
+        out.push(next);
+    });
+    return out;
+}
+
+function stopCompareLoadingBoards() {
+    if (state.compareLoadingBoardsTimer) {
+        clearInterval(state.compareLoadingBoardsTimer);
+        state.compareLoadingBoardsTimer = null;
+    }
+}
+
+function startCompareLoadingBoards() {
+    stopCompareLoadingBoards();
+    let boardA = [...state.currentInitialState];
+    let boardB = [...state.currentInitialState];
+    let prevA = null;
+    let prevB = null;
+    const statsA = getById("compare-side-a-stats");
+    const statsB = getById("compare-side-b-stats");
+    renderMiniBoard("compare-side-a-board", boardA, prevA);
+    renderMiniBoard("compare-side-b-board", boardB, prevB);
+    if (statsA) statsA.innerText = "Đang duyệt node...";
+    if (statsB) statsB.innerText = "Đang duyệt node...";
+
+    state.compareLoadingBoardsTimer = setInterval(() => {
+        const nextA = getBoardNeighbors(boardA);
+        const nextB = getBoardNeighbors(boardB);
+        prevA = boardA;
+        prevB = boardB;
+        boardA = nextA[Math.floor(Math.random() * nextA.length)] || boardA;
+        boardB = nextB[Math.floor(Math.random() * nextB.length)] || boardB;
+        renderMiniBoard("compare-side-a-board", boardA, prevA);
+        renderMiniBoard("compare-side-b-board", boardB, prevB);
+    }, 140);
 }
 
 function renderMiniBoard(targetId, boardState, prevBoardState = null) {
@@ -520,6 +683,8 @@ function renderMiniBoard(targetId, boardState, prevBoardState = null) {
 function renderCompareSplit(result) {
     return new Promise(resolve => {
     const panel = getById("compare-split-panel");
+    const statsA = getById("compare-side-a-stats");
+    const statsB = getById("compare-side-b-stats");
     if (!state.compareMode) {
         panel.classList.add("hidden");
         resolve();
@@ -528,76 +693,43 @@ function renderCompareSplit(result) {
     panel.classList.remove("hidden");
 
     if (!result || !result.ok) {
+        state.compareSelectedPathIndexA = -1;
+        state.compareSelectedPathIndexB = -1;
         const algoA = getById("compare-a")?.value || "bfs";
         const algoB = getById("compare-b")?.value || "dfs";
         getById("compare-side-a-title").innerText = `Algo A: ${algoA.toUpperCase()}`;
         getById("compare-side-b-title").innerText = `Algo B: ${algoB.toUpperCase()}`;
-        // getById("compare-side-a-stats").innerText = "Chua chay compare";
-        // getById("compare-side-b-stats").innerText = "Chua chay compare";
+        if (statsA) statsA.innerText = "Chưa có dữ liệu";
+        if (statsB) statsB.innerText = "Chưa có dữ liệu";
         renderMiniBoard("compare-side-a-board", state.currentInitialState);
         renderMiniBoard("compare-side-b-board", state.currentInitialState);
         resolve();
         return;
     }
 
+    stopCompareLoadingBoards();
+    state.compareSelectedPathIndexA = -1;
+    state.compareSelectedPathIndexB = -1;
     const a = result.algo_a || {};
     const b = result.algo_b || {};
-    const aSamples = Array.isArray(a.sampled_traversal) ? a.sampled_traversal : [];
-    const bSamples = Array.isArray(b.sampled_traversal) ? b.sampled_traversal : [];
-    const aFinal = Array.isArray(a.final_state) ? a.final_state : null;
-    const bFinal = Array.isArray(b.final_state) ? b.final_state : null;
-    const aNeedsFinalFrame = Boolean(aFinal && aFinal.length && (!aSamples.length || !isSameState(aSamples[aSamples.length - 1], aFinal)));
-    const bNeedsFinalFrame = Boolean(bFinal && bFinal.length && (!bSamples.length || !isSameState(bSamples[bSamples.length - 1], bFinal)));
-    const aFrameCount = aSamples.length + (aNeedsFinalFrame ? 1 : 0);
-    const bFrameCount = bSamples.length + (bNeedsFinalFrame ? 1 : 0);
+    const pathFoundA = typeof a.path_found === "boolean" ? a.path_found : Boolean(a.success && (a.final_path_length ?? 0) > 0);
+    const pathFoundB = typeof b.path_found === "boolean" ? b.path_found : Boolean(b.success && (b.final_path_length ?? 0) > 0);
+    const aSolvedBoard = pathFoundA && Array.isArray(a.final_path) && a.final_path.length
+        ? a.final_path[a.final_path.length - 1]
+        : null;
+    const bSolvedBoard = pathFoundB && Array.isArray(b.final_path) && b.final_path.length
+        ? b.final_path[b.final_path.length - 1]
+        : null;
+    const aFinal = aSolvedBoard || (Array.isArray(a.final_state) && a.final_state.length ? a.final_state : state.currentInitialState);
+    const bFinal = bSolvedBoard || (Array.isArray(b.final_state) && b.final_state.length ? b.final_state : state.currentInitialState);
 
     getById("compare-side-a-title").innerText = `Algo A: ${(a.algo || "N/A").toUpperCase()}`;
     getById("compare-side-b-title").innerText = `Algo B: ${(b.algo || "N/A").toUpperCase()}`;
-    getById("compare-side-a-stats").innerText = `nodes=${a.nodes_explored ?? "-"}, ms=${a.elapsed_ms ?? "-"}, success=${a.success ? "yes" : "no"}, step=0`;
-    getById("compare-side-b-stats").innerText = `nodes=${b.nodes_explored ?? "-"}, ms=${b.elapsed_ms ?? "-"}, success=${b.success ? "yes" : "no"}, step=0`;
-
-    if (state.compareAnimationTimer) {
-        clearInterval(state.compareAnimationTimer);
-        state.compareAnimationTimer = null;
-    }
-
-    const total = Math.max(aFrameCount, bFrameCount, 1);
-    let idx = 0;
-    let prevA = null;
-    let prevB = null;
-    const renderFrame = () => {
-        let aState = aSamples[Math.min(idx, Math.max(0, aSamples.length - 1))] || [];
-        let bState = bSamples[Math.min(idx, Math.max(0, bSamples.length - 1))] || [];
-        if (aNeedsFinalFrame && idx >= aSamples.length) aState = aFinal;
-        if (bNeedsFinalFrame && idx >= bSamples.length) bState = bFinal;
-        renderMiniBoard("compare-side-a-board", aState, prevA);
-        renderMiniBoard("compare-side-b-board", bState, prevB);
-        prevA = aState.length ? [...aState] : null;
-        prevB = bState.length ? [...bState] : null;
-        getById("compare-side-a-stats").innerText =
-            `nodes=${a.nodes_explored ?? "-"}, ms=${a.elapsed_ms ?? "-"}, success=${a.success ? "yes" : "no"}, step=${Math.min(idx + 1, aFrameCount || 0)}`;
-        getById("compare-side-b-stats").innerText =
-            `nodes=${b.nodes_explored ?? "-"}, ms=${b.elapsed_ms ?? "-"}, success=${b.success ? "yes" : "no"}, step=${Math.min(idx + 1, bFrameCount || 0)}`;
-    };
-
-    renderFrame();
-    if (total > 1) {
-        const intervalMs = getCompareAnimIntervalMs(total);
-        state.compareAnimationTimer = setInterval(() => {
-            idx += 1;
-            if (idx >= total) {
-                clearInterval(state.compareAnimationTimer);
-                state.compareAnimationTimer = null;
-                idx = total - 1;
-                renderFrame();
-                resolve();
-                return;
-            }
-            renderFrame();
-        }, intervalMs);
-    } else {
-        resolve();
-    }
+    renderMiniBoard("compare-side-a-board", aFinal);
+    renderMiniBoard("compare-side-b-board", bFinal);
+    if (statsA) statsA.innerText = `nodes=${a.nodes_explored ?? "-"}, ms=${a.elapsed_ms ?? "-"}, success=${a.success ? "yes" : "no"}, goal=${pathFoundA ? "yes" : "no"}, timeout=${a.stopped_by_timeout ? "yes" : "no"}`;
+    if (statsB) statsB.innerText = `nodes=${b.nodes_explored ?? "-"}, ms=${b.elapsed_ms ?? "-"}, success=${b.success ? "yes" : "no"}, goal=${pathFoundB ? "yes" : "no"}, timeout=${b.stopped_by_timeout ? "yes" : "no"}`;
+    resolve();
     });
 }
 
@@ -610,6 +742,25 @@ function buildApiUrl(path) {
     const algo = encodeURIComponent(state.currentAlgorithm);
     const separator = path.includes("?") ? "&" : "?";
     return `${API_BASE}${path}${separator}algo=${algo}`;
+}
+
+function setCompareRunningVisual(isRunning) {
+    const compareSplit = getById("compare-split-panel");
+    const comparePanel = getById("compare-panel");
+    const btn = getById("compare-btn");
+    [compareSplit, comparePanel].forEach(el => {
+        if (!el) return;
+        el.classList.toggle("compare-running", Boolean(isRunning));
+    });
+    if (btn) {
+        if (isRunning) {
+            btn.classList.add("btn-busy");
+            btn.innerText = "Comparing...";
+        } else {
+            btn.classList.remove("btn-busy");
+            btn.innerText = "Compare";
+        }
+    }
 }
 
 async function randomizeInput() {
@@ -630,6 +781,7 @@ async function randomizeInput() {
         render(state.currentInitialState, false);
         resetHistory(state.currentInitialState);
         state.solutionPath = [];
+        state.selectedSolutionIndex = -1;
         renderSolutionPath(state.solutionPath);
         updateTraceFromResponse(data);
         await precomputeGoalPlan();
@@ -656,7 +808,13 @@ async function resetSearch() {
     state.isFetchingStep = false;
 
     try {
-        const res = await fetch(buildApiUrl("/reset"), { method: "POST" });
+        const res = await fetch(buildApiUrl("/reset"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                initial_state: state.currentInitialState,
+            }),
+        });
         const data = await res.json();
         if (!res.ok) return handleUnsupportedAlgo();
 
@@ -669,6 +827,7 @@ async function resetSearch() {
         render(state.currentInitialState, false);
         resetHistory(state.currentInitialState);
         state.solutionPath = [];
+        state.selectedSolutionIndex = -1;
         renderSolutionPath(state.solutionPath);
         updateTraceFromResponse(data);
         await precomputeGoalPlan();
@@ -686,42 +845,57 @@ async function compareAlgorithms() {
     const algoA = getById("compare-a")?.value || "";
     const algoB = getById("compare-b")?.value || "";
     const nodeLimitEl = getById("compare-node-limit");
-    let maxNodesExplored = 5000;
-    const parsed = Number(nodeLimitEl?.value);
-    if (Number.isFinite(parsed) && parsed >= 1) maxNodesExplored = parsed;
+    const maxNodesExplored = clampNumberInputValue(nodeLimitEl, 5000);
     const summary = getById("compare-summary");
     const metrics = getById("compare-metrics");
     const traversal = getById("compare-traversal");
-    summary.innerText = "Dang chay mo phong compare...";
-    metrics.innerHTML = "";
-    traversal.innerHTML = "";
+    if (summary) summary.innerText = `Đang chạy compare theo node limit = ${maxNodesExplored}…`;
+    if (metrics) metrics.innerHTML = "";
+    if (traversal) traversal.innerHTML = "";
 
     state.compareIsRunning = true;
+    setCompareRunningVisual(true);
+    startCompareLoadingBoards();
     syncTopbarButtons();
 
     try {
+        const startedUi = performance.now();
         const res = await fetch(`${API_BASE}/compare`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 algo_a: algoA,
                 algo_b: algoB,
+                initial_state: state.currentInitialState,
                 max_steps: 400000,
-                max_duration_ms: 200,
                 max_nodes_explored: maxNodesExplored,
                 // sample_limit: 500,
             }),
         });
         const data = await res.json();
+        if (!res.ok || !data?.ok) {
+            throw new Error(data?.error || `HTTP ${res.status}`);
+        }
+        const minMs = 520;
+        const elapsed = performance.now() - startedUi;
+        if (elapsed < minMs) await new Promise(r => setTimeout(r, minMs - elapsed));
         if (state.compareMode) {
             await renderCompareSplit(data);
         }
         renderCompareResult(data);
     } catch (err) {
-        renderCompareResult(null);
-        alert("Khong the ket noi backend de compare.");
+        await new Promise(r => setTimeout(r, 250));
+        const msg = `Compare lỗi: ${err?.message || "Không thể kết nối backend."}`;
+        stopCompareLoadingBoards();
+        if (summary) summary.innerText = msg;
+        if (metrics) {
+            metrics.innerHTML = `<div class="compare-card"><div class="compare-title">Lỗi</div><div class="compare-line">${msg}</div></div>`;
+        }
+        if (traversal) traversal.innerHTML = "";
+        setStatus(msg);
     } finally {
         state.compareIsRunning = false;
+        setCompareRunningVisual(false);
         syncTopbarButtons();
     }
 }
@@ -753,6 +927,9 @@ function toggleCompareMode() {
     if (!state.compareMode && state.compareAnimationTimer) {
         clearInterval(state.compareAnimationTimer);
         state.compareAnimationTimer = null;
+    }
+    if (!state.compareMode) {
+        stopCompareLoadingBoards();
     }
     renderCompareSplit(null);
     if (!state.compareMode) {
@@ -796,15 +973,11 @@ async function fetchOneStep() {
         if (typeof data.frontier_size !== "undefined") {
             getById("frontier").innerText = data.frontier_size;
         }
-        if (typeof state.precomputedExploreSteps === "number") {
-            const explored = typeof data.nodes_explored === "number" ? data.nodes_explored : 0;
-            setRemainingSteps(Math.max(state.precomputedExploreSteps - explored, 0));
-        }
-        if (data.finished && data.success) {
-            setRemainingSteps(0);
-        }
+        const explored = typeof data.nodes_explored === "number" ? data.nodes_explored : 0;
+        updateRemainingEstimate(explored, Boolean(data.finished), Boolean(data.success));
         if (Array.isArray(data.final_path) && data.final_path.length) {
             state.solutionPath = data.final_path;
+            state.selectedSolutionIndex = state.solutionPath.length - 1;
             renderSolutionPath(state.solutionPath);
         }
         updateTraceFromResponse(data);
@@ -944,29 +1117,49 @@ function renderHighlightedSource(sourceText, language) {
 
 function setupAlgorithmMenu() {
     document.querySelectorAll(".algo-item").forEach(btn => {
-        btn.addEventListener("click", () => {
+        btn.addEventListener("click", async () => {
             if (state.isRunning) return alert("Hãy dừng thuật toán trước khi đổi thuật toán khác.");
             document.querySelectorAll(".algo-item").forEach(x => x.classList.remove("active"));
             btn.classList.add("active");
             state.currentAlgorithm = btn.dataset.algo;
             const name = btn.innerText.trim();
-            //getById("algo-label").innerText = `Thuật toán hiện tại: ${name}`;
-            getById("nodes").innerText = "0";
-            getById("frontier").innerText = "0";
-            getById("time").innerText = "-";
-            setRemainingSteps("-");
             setStatus(`${name} đã được chọn`);
-            resetHistory(state.currentInitialState);
-            state.solutionPath = [];
-            renderSolutionPath(state.solutionPath);
-            state.traceHistory = [];
-            renderTraceProgram(-1);
-            renderTraceLog();
-            precomputeGoalPlan();
+            // Reset cả backend engine của thuật toán mới để tránh giữ trạng thái finished/solved cũ.
+            await resetSearch();
             showAlgorithmSource();
             loadSourceCode();
+            syncTopbarButtons();
             
         });
+    });
+}
+
+function setupCompareControls() {
+    const nodeLimitEl = getById("compare-node-limit");
+    const compareAEl = getById("compare-a");
+    const compareBEl = getById("compare-b");
+
+    if (nodeLimitEl) {
+        const clampNodeLimit = () => clampNumberInputValue(nodeLimitEl, 5000);
+        ["change", "blur"].forEach(eventName => {
+            nodeLimitEl.addEventListener(eventName, clampNodeLimit);
+        });
+    }
+
+    const refreshCompareSelectionPreview = () => {
+        if (!state.compareMode || state.compareIsRunning) return;
+        const summary = getById("compare-summary");
+        const metrics = getById("compare-metrics");
+        const traversal = getById("compare-traversal");
+        if (summary) summary.innerText = "Chọn 2 thuật toán và bấm Compare.";
+        if (metrics) metrics.innerHTML = "";
+        if (traversal) traversal.innerHTML = "";
+        renderCompareSplit(null);
+    };
+
+    [compareAEl, compareBEl].forEach(selectEl => {
+        if (!selectEl) return;
+        selectEl.addEventListener("change", refreshCompareSelectionPreview);
     });
 }
 
@@ -1039,7 +1232,7 @@ window.togglePause = togglePause;
 window.resetSearch = resetSearch;
 window.randomizeInput = randomizeInput;
 window.showBfsSource = showBfsSource;
-window.showFrontendSource = showFrontendSource;
+// window.showFrontendSource = showFrontendSource;
 window.compareAlgorithms = compareAlgorithms;
 window.toggleCompareMode = toggleCompareMode;
 window.showAlgorithmSource = showAlgorithmSource;
@@ -1047,6 +1240,7 @@ window.showAlgorithmSource = showAlgorithmSource;
 render(state.currentInitialState, false);
 resetHistory(state.currentInitialState);
 setupAlgorithmMenu();
+setupCompareControls();
 loadSourceCode();
 syncTopbarButtons();
 resetSearch();

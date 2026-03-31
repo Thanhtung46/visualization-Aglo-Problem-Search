@@ -45,7 +45,15 @@ class IDDFS8PuzzleEngine(BaseAlgorithmEngine):
     def step(self):
         s = self.search_state
         if s["finished"]:
-            return self._with_trace({"finished": True}, [])
+            return self._with_trace(
+                {
+                    "finished": True,
+                    "success": s["solved"],
+                    "current_state": list(GOAL_STATE if s["solved"] else self.initial_state),
+                    "nodes_explored": s["nodes_explored"],
+                },
+                [],
+            )
 
         if s["nodes_explored"] == 0:
             s["start_time"] = time.time()
@@ -55,13 +63,33 @@ class IDDFS8PuzzleEngine(BaseAlgorithmEngine):
             s["current_limit"] += 1
             if s["current_limit"] > self.max_depth_limit:
                 s["finished"] = True
-                return self._with_trace({"finished": True, "success": False, "msg": "Depth limit exceeded"}, [])
+                return self._with_trace(
+                    {
+                        "finished": True,
+                        "success": False,
+                        "msg": "Depth limit exceeded",
+                        "current_state": list(self.initial_state),
+                        "nodes_explored": s["nodes_explored"],
+                        "current_limit": s["current_limit"],
+                    },
+                    [],
+                )
             
             # Reset to restart from the root with a larger depth limit
             s["stack"] = [(self.initial_state, 0)]
             s["parent"] = {self.initial_state: None}
             msg = f"Increasing depth limit to L = {s['current_limit']}. Restarting from root..."
-            return self._with_trace({"finished": False}, [self._push_trace(0, msg)])
+            return self._with_trace(
+                {
+                    "finished": False,
+                    "success": False,
+                    "current_state": list(self.initial_state),
+                    "nodes_explored": s["nodes_explored"],
+                    "current_limit": s["current_limit"],
+                    "frontier_size": len(s["stack"]),
+                },
+                [self._push_trace(0, msg)],
+            )
 
         # Pop node from Stack (DFS behavior)
         current, depth = s["stack"].pop()

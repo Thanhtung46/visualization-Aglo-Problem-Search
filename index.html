@@ -19,7 +19,7 @@
             <button class="algo-item" data-algo="bidirectional">Bidirectional Search</button>
             <button class="algo-item" data-algo="beam">Beam Search</button>
             <button class="algo-item" data-algo="idastar">Iterative Deepening A* (IDA*)</button>
-            <button class="algo-item" data-algo="advanced">Other Advanced Search Methods</button>
+            <!-- <button class="algo-item" data-algo="advanced">Other Advanced Search Methods</button> -->
         </aside>
 
         <main class="main">
@@ -30,7 +30,7 @@
                 <button id="pause-btn" class="btn-pause" onclick="togglePause()" disabled>Pause</button>
                 <button id="reset-btn" class="btn-reset" onclick="resetSearch()">Reset</button>
                 <button id="random-btn" class="btn-random" onclick="randomizeInput()">Random Input</button>
-                <label class="delay">Delay (ms) <input id="delay-input" type="number" min="0" max="5000" step="50" value="600"></label>
+                <label class="delay" id="delay-control">Delay (ms) <input id="delay-input" type="number" min="1" max="5000" step="50" value="600"></label>
                 <button id="compare-mode-btn" class="btn-random" onclick="toggleCompareMode()">Compare Mode: Off</button>
                 <div id="compare-controls" class="hidden">
                     <label class="delay">Compare A
@@ -63,9 +63,6 @@
                         Node explore limit
                         <input id="compare-node-limit" type="number" min="1" max="500000" step="500" value="5000">
                     </label>
-                    <!-- <label class="delay" title="Tổng thời gian tối đa để chạy hết animation compare; số frame càng nhiều thì mỗi frame càng nhanh.">Tua compare (giây) -->
-                        <!-- <input id="compare-anim-budget-sec" type="number" min="1" max="600" step="1" value="50"> -->
-                    <!-- </label> -->
                     <button id="compare-btn" class="btn-start" onclick="compareAlgorithms()">Compare</button>
                 </div>
             </div>
@@ -78,12 +75,12 @@
                             <div class="compare-side">
                                 <div class="compare-title" id="compare-side-a-title">Algo A</div>
                                 <div class="compare-main-board" id="compare-side-a-board"></div>
-                                <!-- <div class="compare-line" id="compare-side-a-stats">No data</div> -->
+                                <div class="compare-line" id="compare-side-a-stats">No data</div>
                             </div>
                             <div class="compare-side">
                                 <div class="compare-title" id="compare-side-b-title">Algo B</div>
                                 <div class="compare-main-board" id="compare-side-b-board"></div>
-                                <!-- <div class="compare-line" id="compare-side-b-stats">No data</div> -->
+                                <div class="compare-line" id="compare-side-b-stats">No data</div>
                             </div>
                         </div>
                     </div>
@@ -97,7 +94,7 @@
                         <div class="stats">
                             <span>Nút đã duyệt: <b id="nodes">0</b></span>
                             <span>Nút chờ duyệt: <b id="frontier">0</b></span>
-                            <span>Bước còn lại đến goal: <b id="remaining-steps">-</b></span>
+                            <span>Số node còn lại đến goal: <b id="remaining-steps">-</b></span>
                             <span>Thời gian: <b id="time">-</b></span>
                             <span>Step đã lưu: <b id="history-count">0</b></span>
                             <span id="status">Sẵn sàng</span>
@@ -105,7 +102,7 @@
                     </div>
                     <div class="panel hidden" id="compare-panel">
                         <h3 class="panel-title">So sánh thuật toán</h3>
-                        <!-- <div id="compare-summary" class="subtle">Chọn 2 thuật toán và bấm Compare.</div> -->
+                        <div id="compare-summary" class="subtle">Chọn 2 thuật toán và bấm Compare.</div>
                         <div class="compare-metrics" id="compare-metrics"></div>
                         <div class="compare-traversal" id="compare-traversal"></div>
                     </div>
@@ -122,8 +119,8 @@
                         <div class="source-block">
                             <h3 class="panel-title">Mã nguồn</h3>
                             <div class="source-switch">
-                                <button class="source-btn" onclick="showAlgorithmSource()">Mã nguồn thuật toán (Python)</button>
-                                <button class="source-btn" onclick="showFrontendSource()">Frontend (JavaScript)</button>
+                                <button class="source-btn" onclick="showAlgorithmSource()">Mã nguồn thuật toán</button>
+                                <!-- <button class="source-btn" onclick="showFrontendSource()">Frontend (JavaScript)</button> -->
                             </div>
                             <div id="source-title" class="subtle">Mã nguồn thuật toán (Python)</div>
                             <pre id="source-code">Đang tải mã nguồn...</pre>

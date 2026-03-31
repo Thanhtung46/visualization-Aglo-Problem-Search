@@ -1,21 +1,25 @@
 import random
 import time
+from collections import deque
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from engines.registry import build_default_engines
+from engines.puzzle_common import GOAL_STATE, get_neighbors, reconstruct_path
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}}) # Cho phép mọi nguồn
 
 engines = build_default_engines()
-DEFAULT_ALGO = "bfs"
+# sửa lại logic này 
+DEFAULT_ALGO = "bfs" 
+COMPARE_DEFAULT_MAX_DURATION_MS = 60000
 
 
 def get_engine(algo_key):
     key = (algo_key or DEFAULT_ALGO).lower()
     return engines.get(key)
 
-
+# xem lại hàm này
 def _reservoir_append_sample(reservoir, current_state, step_index, limit):
     """Giữ tối đa `limit` mẫu phân bố xấp xỉ đều trên stream các bước (reservoir sampling)."""
     if limit <= 0 or not current_state:
@@ -38,6 +42,119 @@ def _normalize_state(state):
         return None
 
 
+def _simulate_basic_graph_search(
+    algo_key,
+    start_state,
+    max_steps=5000,
+    sample_limit=60,
+    max_duration_ms=None,
+    max_nodes_explored=None,
+):
+    """Fast compare path for BFS/DFS without trace/current_path per step."""
+    if algo_key == "bfs":
+        frontier = deque([start_state])
+        pop_frontier = frontier.popleft
+        push_frontier = frontier.append
+        neighbor_iter = get_neighbors
+    elif algo_key == "dfs":
+        frontier = [start_state]
+        pop_frontier = frontier.pop
+        push_frontier = frontier.append
+
+        def neighbor_iter(state):
+            return reversed(get_neighbors(state))
+    else:
+        return None
+
+    started = time.perf_counter()
+    seen = {start_state}
+    parent = {start_state: None}
+    steps_executed = 0
+    nodes_explored = 0
+    frontier_peak = len(frontier)
+    finished = False
+    success = False
+    sampled_traversal = []
+    current = start_state
+    stopped_by_node_limit = False
+
+    while frontier and steps_executed < max_steps:
+        if max_duration_ms is not None:
+            elapsed_ms_so_far = (time.perf_counter() - started) * 1000
+            if elapsed_ms_so_far >= max_duration_ms:
+                break
+
+        current = pop_frontier()
+        steps_executed += 1
+        nodes_explored += 1
+        _reservoir_append_sample(sampled_traversal, current, steps_executed, sample_limit)
+
+        if current == GOAL_STATE:
+            finished = True
+            success = True
+            break
+
+        if max_nodes_explored is not None and max_nodes_explored > 0 and nodes_explored >= int(max_nodes_explored):
+            stopped_by_node_limit = True
+            break
+
+        for neighbor in neighbor_iter(current):
+            if neighbor not in seen:
+                seen.add(neighbor)
+                parent[neighbor] = current
+                push_frontier(neighbor)
+
+        frontier_peak = max(frontier_peak, len(frontier))
+
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    final_path = reconstruct_path(parent, current) if success else []
+    final_path_length = len(final_path)
+    path_found = bool(success and final_path_length > 0)
+    total_path_cost = (final_path_length - 1) if path_found else None
+    frontier_remaining = len(frontier)
+
+    final_snap = list(current) if current else None
+    if final_snap:
+        if sampled_traversal:
+            if sampled_traversal[-1] != final_snap:
+                sampled_traversal[-1] = final_snap
+        else:
+            sampled_traversal.append(final_snap)
+
+    stopped_by_limit = bool((not finished) and steps_executed >= max_steps)
+    stopped_by_timeout = bool(
+        (not finished)
+        and (max_duration_ms is not None)
+        and (not stopped_by_limit)
+        and (not stopped_by_node_limit)
+    )
+
+    return {
+        "algo": algo_key,
+        "supported": True,
+        "finished": finished,
+        "success": success,
+        "steps_executed": steps_executed,
+        "max_steps": max_steps,
+        "stopped_by_limit": stopped_by_limit,
+        "max_duration_ms": max_duration_ms,
+        "stopped_by_timeout": stopped_by_timeout,
+        "max_nodes_explored": max_nodes_explored,
+        "stopped_by_node_limit": stopped_by_node_limit,
+        "nodes_explored": nodes_explored,
+        "frontier_peak": frontier_peak,
+        "frontier_remaining": frontier_remaining,
+        "elapsed_ms": elapsed_ms,
+        "processing_time_ms": elapsed_ms,
+        "path_found": path_found,
+        "total_path_cost": total_path_cost,
+        "final_path": [list(s) for s in final_path],
+        "final_path_length": final_path_length,
+        "sampled_traversal": [list(s) for s in sampled_traversal],
+        "final_state": final_snap,
+    }
+
+
 def simulate_algorithm(
     algo_key,
     max_steps=5000,
@@ -46,7 +163,19 @@ def simulate_algorithm(
     max_duration_ms=None,
     max_nodes_explored=None,
 ):
-    
+    normalized_initial = _normalize_state(initial_state)
+    if normalized_initial is not None:
+        fast_result = _simulate_basic_graph_search(
+            (algo_key or "").lower(),
+            normalized_initial,
+            max_steps=max_steps,
+            sample_limit=sample_limit,
+            max_duration_ms=max_duration_ms,
+            max_nodes_explored=max_nodes_explored,
+        )
+        if fast_result is not None:
+            return fast_result
+
     isolated_engines = build_default_engines()
     engine = isolated_engines.get((algo_key or "").lower())
     
@@ -58,7 +187,6 @@ def simulate_algorithm(
             "error": f"Unsupported algorithm: {algo_key}",
         }
 
-    normalized_initial = _normalize_state(initial_state)
     if normalized_initial is not None:
         engine.initial_state = normalized_initial
     engine.reset()
@@ -83,11 +211,6 @@ def simulate_algorithm(
         frontier_peak = max(frontier_peak, int(payload.get("frontier_size", 0)))
         nodes_explored = int(payload.get("nodes_explored", nodes_explored))
 
-        if max_nodes_explored is not None and max_nodes_explored > 0:
-            if nodes_explored >= int(max_nodes_explored):
-                stopped_by_node_limit = True
-                break
-
         current_state = payload.get("current_state")
         _reservoir_append_sample(sampled_traversal, current_state, steps_executed, sample_limit)
 
@@ -95,6 +218,11 @@ def simulate_algorithm(
             finished = True
             success = bool(payload.get("success"))
             break
+
+        if max_nodes_explored is not None and max_nodes_explored > 0:
+            if nodes_explored >= int(max_nodes_explored):
+                stopped_by_node_limit = True
+                break
 
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     final_path = last_payload.get("final_path", []) or []
@@ -163,6 +291,10 @@ def reset():
         engine = get_engine(algo_key)
         if engine is None:
             return jsonify({"error": f"Unsupported algorithm: {algo_key}"}), 400
+        body = request.get_json(silent=True) or {}
+        initial_state = _normalize_state(body.get("initial_state"))
+        if initial_state is not None:
+            engine.initial_state = initial_state
         return jsonify(engine.reset())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -216,15 +348,16 @@ def compare_algorithms():
         body = request.get_json(silent=True) or {}
         algo_a = (body.get("algo_a") or "bfs").lower()
         algo_b = (body.get("algo_b") or "dfs").lower()
+        initial_state = body.get("initial_state")
         max_steps = int(body.get("max_steps", 400000))
         # sample_limit = int(body.get("sample_limit", 500))
         _md = body.get("max_duration_ms", None)
         if _md in (None, "", False):
-            max_duration_ms = None
+            max_duration_ms = COMPARE_DEFAULT_MAX_DURATION_MS
         else:
             max_duration_ms = int(_md)
             if max_duration_ms <= 0:
-                max_duration_ms = None
+                max_duration_ms = COMPARE_DEFAULT_MAX_DURATION_MS
 
         max_nodes_explored = body.get("max_nodes_explored", None)
         try:
@@ -239,6 +372,7 @@ def compare_algorithms():
             algo_a,
             max_steps=max_steps,
             # sample_limit=sample_limit,
+            initial_state=initial_state,
             max_duration_ms=max_duration_ms,
             max_nodes_explored=max_nodes_explored,
         )
@@ -246,6 +380,7 @@ def compare_algorithms():
             algo_b,
             max_steps=max_steps,
             # sample_limit=sample_limit,
+            initial_state=initial_state,
             max_duration_ms=max_duration_ms,
             max_nodes_explored=max_nodes_explored,
         )
@@ -285,7 +420,13 @@ def plan_algorithm():
         algo_key = (body.get("algo") or request.args.get("algo") or DEFAULT_ALGO).lower()
         initial_state = body.get("initial_state")
         max_steps = int(body.get("max_steps", 50000))
-        max_duration_ms = int(body.get("max_duration_ms", 2500))
+        _md = body.get("max_duration_ms", None)
+        if _md in (None, "", False):
+            max_duration_ms = None
+        else:
+            max_duration_ms = int(_md)
+            if max_duration_ms <= 0:
+                max_duration_ms = None
 
         start = _normalize_state(initial_state)
         if start is None:
@@ -311,7 +452,9 @@ def plan_algorithm():
                     success = True
                     final_path = [list(s) for s in reconstruct_path(parent, current)]
                     break
-                for nb in get_neighbors(current):
+                # Phải khớp với DFS engine.step(): duyệt reversed(neighbors)
+                # để số node plan trước và số node chạy thật đồng bộ.
+                for nb in reversed(get_neighbors(current)):
                     if nb not in seen:
                         seen.add(nb)
                         parent[nb] = current
