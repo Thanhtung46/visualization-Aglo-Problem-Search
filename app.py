@@ -1,22 +1,21 @@
 import random
 import time
 from collections import deque
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
 from engines.registry import build_default_engines
 from engines.puzzle_common import GOAL_STATE, get_neighbors, reconstruct_path
 
-app = Flask(__name__)
+app = Flask(__name__, 
+            static_folder='UI/static',    # Thư mục chứa CSS/JS
+            template_folder='UI/templates') # Thư mục chứa HTML
 CORS(app, resources={r"/*": {"origins": "*"}}) # Cho phép mọi nguồn
-
 engines = build_default_engines()
-# sửa lại logic này 
-DEFAULT_ALGO = "bfs" 
 COMPARE_DEFAULT_MAX_DURATION_MS = 60000
 
 
 def get_engine(algo_key):
-    key = (algo_key or DEFAULT_ALGO).lower()
+    key = (algo_key).lower()
     return engines.get(key)
 
 # xem lại hàm này
@@ -276,7 +275,7 @@ def simulate_algorithm(
 @app.route('/step', methods=['GET'])
 def step():
     try:
-        algo_key = request.args.get("algo", DEFAULT_ALGO)
+        algo_key = request.args.get("algo")
         engine = get_engine(algo_key)
         if engine is None:
             return jsonify({"error": f"Unsupported algorithm: {algo_key}"}), 400
@@ -287,7 +286,7 @@ def step():
 @app.route('/reset', methods=['POST'])
 def reset():
     try:
-        algo_key = request.args.get("algo", DEFAULT_ALGO)
+        algo_key = request.args.get("algo")
         engine = get_engine(algo_key)
         if engine is None:
             return jsonify({"error": f"Unsupported algorithm: {algo_key}"}), 400
@@ -302,7 +301,7 @@ def reset():
 @app.route('/random-state', methods=['POST'])
 def random_state():
     try:
-        algo_key = request.args.get("algo", DEFAULT_ALGO)
+        algo_key = request.args.get("algo")
         engine = get_engine(algo_key)
         if engine is None:
             return jsonify({"error": f"Unsupported algorithm: {algo_key}"}), 400
@@ -417,7 +416,7 @@ def plan_algorithm():
     from engines.puzzle_common import GOAL_STATE, get_neighbors, reconstruct_path
     try:
         body = request.get_json(silent=True) or {}
-        algo_key = (body.get("algo") or request.args.get("algo") or DEFAULT_ALGO).lower()
+        algo_key = (body.get("algo") or request.args.get("algo")).lower()
         initial_state = body.get("initial_state")
         max_steps = int(body.get("max_steps", 50000))
         _md = body.get("max_duration_ms", None)
@@ -510,7 +509,7 @@ def solve():
 
     try:
         body = request.get_json(silent=True) or {}
-        algo_key = (body.get("algo") or request.args.get("algo", DEFAULT_ALGO)).lower()
+        algo_key = (body.get("algo") or request.args.get("algo")).lower()
         initial_state_raw = body.get("initial_state") or request.args.get("initial_state")
 
         # Normalize initial_state từ frontend
@@ -684,7 +683,9 @@ def solve():
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
+@app.route('/')
+def index():
+    return render_template('./index.html')
 if __name__ == '__main__':
     # Chạy Flask ở cổng 5000
     app.run(host='127.0.0.1', port=5000, debug=True)

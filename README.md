@@ -23,6 +23,8 @@ pip install flask flask-cors
 ### Chay backend
 ```bash
 python3 app.py
+
+sau đó ấn vào IP hiện lên
 ```
 Backend mac dinh: `http://127.0.0.1:5000`
 
@@ -39,25 +41,30 @@ Sau do vao: `http://127.0.0.1:8080`
 ## 2) Kien truc thu muc
 
 ```text
-.
-├── app.py
-├── index.html
-├── app.js
-├── styles.css
-└── engines/
-    ├── __init__.py
-    ├── base_engine.py          # interface chung
-    ├── puzzle_common.py        # helper 8-puzzle dung chung
-    ├── registry.py             # dang ky engine active
-    ├── bfs_engine.py           # engine da implement
-    ├── dfs_engine.py           # TODO
-    ├── ucs_engine.py           # TODO
-    ├── astar_engine.py         # TODO
-    ├── iddfs_engine.py         # TODO
-    ├── bidirectional_engine.py # TODO
-    ├── beam_engine.py          # TODO
-    ├── idastar_engine.py       # TODO
-    └── advanced_search_engine.py # TODO
+
+├── app.py                      # File chạy chính (Backend Flask)
+├── .gitignore                  # Cấu hình bỏ qua các file khi dùng Git
+├── README.md                   # Tài liệu hướng dẫn dự án
+├── engines/                    # Thư mục chứa các thuật toán tìm kiếm
+│   ├── __init__.py
+│   ├── __pycache__/            # File biên dịch Python (tự động sinh ra)
+│   ├── base_engine.py          # Interface/Lớp trừu tượng chung
+│   ├── puzzle_common.py        # Các hàm bổ trợ cho 8-puzzle
+│   ├── registry.py             # Quản lý việc đăng ký các engine
+│   ├── bfs_engine.py           # Thuật toán Breadth-First Search
+│   ├── dfs_engine.py           # Thuật toán Depth-First Search
+│   ├── ucs_engine.py           # Thuật toán Uniform Cost Search
+│   ├── astar_engine.py         # Thuật toán A* Search
+│   ├── iddfs_engine.py         # Thuật toán Iterative Deepening DFS
+│   ├── bidirectional_engine.py # Thuật toán Tìm kiếm 2 chiều
+│   ├── beam_engine.py          # Thuật toán Beam Search
+│   └── idastar_engine.py       # Thuật toán IDA* Search
+└── UI/                         # Thư mục chứa giao diện người dùng
+    ├── static/                 # Chứa các tài nguyên tĩnh
+    │   ├── app.js              # Xử lý logic Frontend (gọi API)
+    │   └── styles.css          # Định dạng giao diện
+    └── templates/              # Chứa các tệp giao diện HTML
+        └── index.html          # Trang web chính   
 ```
 
 ---
